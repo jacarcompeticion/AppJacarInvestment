@@ -8,33 +8,38 @@ from openai import OpenAI
 from datetime import datetime
 import re
 
-# 1. CONFIGURACIÓN
+# 1. CONFIGURACIÓN E INICIALIZACIÓN
 st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
 
-# Estados de memoria
+# Estados de memoria persistentes
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'historial' not in st.session_state: st.session_state.historial = []
 if 'señal_actual' not in st.session_state: st.session_state.señal_actual = None
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = []
-# Nuevo estado para controlar la selección desde los botones
-if 'activo_seleccionado' not in st.session_state: st.session_state.activo_seleccionado = "Oro"
+if 'activo_sel' not in st.session_state: st.session_state.activo_sel = "Oro"
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# Definición de activos (para usar en varios sitios)
-activos_dict = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
+# Diccionario maestro de activos (Punto 1)
+activos = {
+    "Oro": "GC=F", 
+    "Nasdaq": "^IXIC", 
+    "EUR/USD": "EURUSD=X", 
+    "Brent": "BZ=F", 
+    "Bitcoin": "BTC-USD"
+}
 
-# --- PUNTO 1: PANEL DE OPORTUNIDADES FUNCIONAL ---
-st.subheader("🚀 Acceso Rápido y Oportunidades")
-cols_top = st.columns(len(activos_dict))
+# --- PUNTO 1: PANEL DE OPORTUNIDADES INTERACTIVO ---
+st.subheader("🚀 Monitor de Oportunidades (Top Profit)")
+cols_top = st.columns(len(activos))
 
-for i, nombre in enumerate(activos_dict.keys()):
-    # Al hacer clic, actualizamos el estado y recargamos
-    if cols_top[i].button(f"📊 {nombre}", key=f"top_{nombre}", use_container_width=True):
-        st.session_state.activo_seleccionado = nombre
+for i, nombre in enumerate(activos.keys()):
+    # Hacemos que el botón cambie el activo seleccionado
+    if cols_top[i].button(f"📊 {nombre}", key=f"btn_top_{nombre}", use_container_width=True):
+        st.session_state.activo_sel = nombre
         st.rerun()
 
-# 2. PANEL LATERAL (Sidebar conectado al estado)
+# 2. PANEL LATERAL (Sincronizado)
 with st.sidebar:
     st.title(f"💰 Balance: {st.session_state.wallet:,.2f} USD")
     st.divider()
@@ -43,29 +48,34 @@ with st.sidebar:
     tf_visual = st.selectbox("Temporalidad", ["1m", "5m", "15m", "1h", "1d"], index=2)
     st.divider()
     
-    # El selectbox ahora se sincroniza con los botones superiores
-    seleccion = st.selectbox("Seleccionar Activo", list(activos_dict.keys()), 
-                             index=list(activos_dict.keys()).index(st.session_state.activo_seleccionado))
-    # Actualizamos el estado si el usuario cambia el selectbox manualmente
-    st.session_state.activo_seleccionado = seleccion
+    # El selectbox manda sobre el estado, pero el estado puede ser cambiado por los botones
+    lista_nombres = list(activos.keys())
+    indice_act = lista_nombres.index(st.session_state.activo_sel)
+    seleccion = st.selectbox("Activo Actual", lista_nombres, index=indice_act)
+    st.session_state.activo_sel = seleccion
 
-# 3. OBTENCIÓN DE DATOS
+# 3. OBTENCIÓN DE DATOS (Punto 6: Precisión)
 ajuste_temp = {"1m": "1d", "5m": "5d", "15m": "5d", "1h": "1mo", "1d": "max"}
 df = yf.download(activos[seleccion], period=ajuste_temp.get(tf_visual, "5d"), interval=tf_visual)
-if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
 df = df.dropna()
 
 if not df.empty:
     precio_act = float(df['Close'].iloc[-1])
+    # Punto 7: Soportes y Resistencias última hora (aprox 60 velas si es 1m o últimas 40)
     resistencia = float(df['High'].tail(40).max())
     soporte = float(df['Low'].tail(40).min())
     
-    # 4. GRÁFICO PROFESIONAL
+    # 4. GRÁFICO (Punto 11: Visualización clara)
     colors_vol = ['#26a69a' if row['Close'] >= row['Open'] else '#ef5350' for _, row in df.iterrows()]
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+    
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
     fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors_vol, name="Volumen"), row=2, col=1)
     
+    # Dibujar niveles proyectados (Punto 11)
     fig.add_hline(y=resistencia, line_dash="dash", line_color="cyan", opacity=0.3, row=1, col=1)
     fig.add_hline(y=soporte, line_dash="dash", line_color="orange", opacity=0.3, row=1, col=1)
 
@@ -73,80 +83,62 @@ if not df.empty:
     fig.update_yaxes(autorange=True, fixedrange=False, side="right", row=1, col=1)
     st.plotly_chart(fig, use_container_width=True)
 
-    # 5. GENERADOR DE SEÑALES (IA MEJORADA)
-    if st.button("🧠 GENERAR ANÁLISIS DE MERCADO"):
-        with st.spinner('Escaneando indicadores y contexto...'):
-            prompt = f"""Activo: {seleccion} a {precio_act}. Resistencia: {resistencia}, Soporte: {soporte}. Perfil: {perfil}.
-            Responde estrictamente con estas etiquetas:
-            TIPO: [A MERCADO o PENDIENTE]
-            ACCIÓN: [COMPRA o VENTA]
-            PRECIO: [Valor numérico]
-            SL: [Valor numérico]
-            TP: [Valor numérico]
-            LOTES: [Valor numérico]
-            MOTIVO: [Análisis corto]"""
-            
+    # 5. GENERADOR DE SEÑALES (Punto 2 y 9)
+    if st.button("🧠 ANALIZAR OPORTUNIDAD DE MERCADO"):
+        with st.spinner('IA analizando soportes, resistencias y contexto geopolítico...'):
+            prompt = f"Trader pro. Activo: {seleccion} a {precio_act}. Res: {resistencia}, Sop: {soporte}. Estilo: {perfil}. Responde con: TIPO (MERCADO/PENDIENTE), ACCIÓN (COMPRA/VENTA), PRECIO, SL, TP, LOTES, MOTIVO."
             resp = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": "Eres un ejecutor de trading. No des explicaciones, solo las etiquetas."}, {"role": "user", "content": prompt}]
+                messages=[{"role": "system", "content": "Eres un ejecutor de trading preciso."}, {"role": "user", "content": prompt}]
             )
             res = resp.choices[0].message.content
             
-            # LECTOR ROBUSTO DE NÚMEROS (Punto 6)
-            def extraer_numero(tag, texto):
-                match = re.search(rf"{tag}:\s*([\d\.]+)", texto, re.IGNORECASE)
-                return float(match.group(1)) if match else 0.0
+            # Extractor robusto
+            def ext(tag):
+                try: return re.search(rf"{tag}:\s*([\d\.\w\s/]+)", res, re.I).group(1).strip()
+                except: return "N/A"
 
-            try:
-                st.session_state.señal_actual = {
-                    "texto": res,
-                    "entrada": extraer_numero("PRECIO", res),
-                    "sl": extraer_numero("SL", res),
-                    "tp": extraer_numero("TP", res),
-                    "lotes": extraer_numero("LOTES", res),
-                    "tipo": "COMPRA" if "COMPRA" in res.upper() else "VENTA"
-                }
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error interpretando la señal: {e}")
+            st.session_state.señal_actual = {
+                "texto": res,
+                "entrada": float(re.search(r"PRECIO:\s*([\d\.]+)", res, re.I).group(1)),
+                "lotes": float(re.search(r"LOTES:\s*([\d\.]+)", res, re.I).group(1)),
+                "tipo": "COMPRA" if "COMPRA" in res.upper() else "VENTA"
+            }
+            st.rerun()
 
-    # --- FLUJO DE CARTERA ---
+    # --- FLUJO DE TRABAJO (Punto 3 y 4) ---
     if st.session_state.señal_actual:
         with st.container(border=True):
-            st.info("### 📡 Señal Recibida")
-            st.code(st.session_state.señal_actual['texto'])
-            col_a, col_b = st.columns(2)
-            ent_real = col_a.number_input("Confirmar Entrada", value=st.session_state.señal_actual['entrada'], format="%.4f")
-            lot_real = col_b.number_input("Confirmar Lotes", value=st.session_state.señal_actual['lotes'])
-            
-            if st.button("🚀 ACEPTAR Y ABRIR POSICIÓN"):
+            st.info(f"### 📡 Señal para {seleccion}")
+            st.write(st.session_state.señal_actual['texto'])
+            c1, c2 = st.columns(2)
+            e_real = c1.number_input("Precio Real In", value=st.session_state.señal_actual['entrada'], format="%.4f")
+            l_real = c2.number_input("Lotes Reales", value=st.session_state.señal_actual['lotes'])
+            if st.button("🚀 ACEPTAR POSICIÓN"):
                 st.session_state.cartera_abierta.append({
                     "id": datetime.now().strftime("%H%M%S"),
-                    "activo": seleccion,
-                    "entrada": ent_real,
-                    "lotes": lot_real,
-                    "tipo": st.session_state.señal_actual['tipo'],
-                    "hora": datetime.now().strftime("%H:%M")
+                    "activo": seleccion, "entrada": e_real, "lotes": l_real,
+                    "tipo": st.session_state.señal_actual['tipo'], "hora": datetime.now().strftime("%H:%M")
                 })
                 st.session_state.señal_actual = None
                 st.rerun()
 
-    # POSICIONES ACTIVAS (Multitarea)
+    # POSICIONES ACTIVAS (Punto 3, 4, 5)
     if st.session_state.cartera_abierta:
         st.divider()
-        st.subheader("💼 Posiciones en Curso (Independientes)")
+        st.subheader("💼 Operaciones en Curso")
         for i, pos in enumerate(st.session_state.cartera_abierta):
-            with st.expander(f"🟢 {pos['tipo']} {pos['activo']} (In: {pos['entrada']})", expanded=True):
-                c1, c2, c3 = st.columns([2, 2, 1])
-                precio_salida = c1.number_input(f"Precio Salida {pos['id']}", value=precio_act if seleccion == pos['activo'] else pos['entrada'], format="%.4f")
-                pnl_real = c2.number_input(f"Profit/Loss Final ($) {pos['id']}", value=0.0)
-                if c3.button(f"Cerrar {pos['id']}", use_container_width=True):
-                    st.session_state.wallet += pnl_real
-                    st.session_state.historial.append({"Activo": pos['activo'], "PnL": pnl_real, "Fecha": pos['hora']})
+            with st.expander(f"🔹 {pos['activo']} | {pos['tipo']} | In: {pos['entrada']}", expanded=True):
+                colx, coly, colz = st.columns([2, 2, 1])
+                p_salida = colx.number_input(f"Precio Salida", value=precio_act if seleccion == pos['activo'] else pos['entrada'], format="%.4f", key=f"s_{pos['id']}")
+                pnl = coly.number_input(f"PnL Final ($)", value=0.0, key=f"p_{pos['id']}")
+                if colz.button(f"Cerrar", key=f"b_{pos['id']}"):
+                    st.session_state.wallet += pnl
+                    st.session_state.historial.append({"Activo": pos['activo'], "PnL": pnl, "Fecha": pos['hora']})
                     st.session_state.cartera_abierta.pop(i)
                     st.rerun()
 
     if st.session_state.historial:
         st.divider()
-        st.subheader("📊 Historial Semanal")
-        st.table(pd.DataFrame(st.session_state.historial).tail(5))
+        st.subheader("📊 Historial y Resumen (Punto 4)")
+        st.table(pd.DataFrame(st.session_state.historial).tail(10))
