@@ -70,19 +70,43 @@ if not df.empty:
     c3.metric("Resistencia", f"{resistencia:.4f}")
     c4.metric("Soporte", f"{soporte:.4f}")
 
-  # 5. GRÁFICO PROFESIONAL (Busca esta sección en tu app.py)
+ # 5. GRÁFICO PROFESIONAL CON VOLUMEN Y AUTO-AJUSTE (Puntos 10 y 11)
+    from plotly.subplots import make_subplots
+
+    # Creamos un gráfico con dos filas: una para velas (80% espacio) y otra para volumen (20%)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.03, subplot_titles=(f'Velas {tf_visual}', 'Volumen'), 
+                        row_width=[0.2, 0.8])
+
+    # Añadir Velas Japonesas
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'],
+        low=df['Low'], close=df['Close'], name="Precio"
+    ), row=1, col=1)
+
+    # Añadir Barras de Volumen
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Volumen", marker_color='rgba(100,100,100,0.5)'), row=2, col=1)
+
+    # Dibujar líneas de Soporte/Resistencia (Punto 11)
+    fig.add_hline(y=resistencia, line_dash="dash", line_color="cyan", opacity=0.3, annotation_text="Resistencia", row=1, col=1)
+    fig.add_hline(y=soporte, line_dash="dash", line_color="orange", opacity=0.3, annotation_text="Soporte", row=1, col=1)
+
+    # --- EL TRUCO DEL AUTO-AJUSTE ---
     fig.update_layout(
-        template="plotly_dark", 
-        height=600, # He subido un poco la altura para que se vea mejor
+        template="plotly_dark",
+        height=700,
         xaxis_rangeslider_visible=False,
-        yaxis=dict(
-            autorange=True,      # <--- ESTE ES EL TRUCO: Auto-zoom al precio
-            fixedrange=False,     # Permite que tú muevas el eje Y con el ratón
-            side="right", 
-            gridcolor='rgba(255,255,255,0.1)'
-        ),
-        margin=dict(l=10, r=50, t=30, b=20)
+        showlegend=False,
+        margin=dict(l=10, r=50, t=30, b=10)
     )
+
+    # Forzar el zoom en el eje Y del gráfico de velas
+    fig.update_yaxes(autorange=True, fixedrange=False, side="right", row=1, col=1)
+    # Eje Y del volumen más discreto
+    fig.update_yaxes(showticklabels=False, row=2, col=1)
+
+    st.plotly_chart(fig, use_container_width=True)
+    
     # 6. GENERACIÓN DE ORDEN Y REGISTRO (Puntos 3, 4)
     if st.button("🧠 ANALIZAR Y GENERAR ORDEN"):
         with st.spinner('IA Calculando rangos basándose en contexto geopolítico y técnico...'):
