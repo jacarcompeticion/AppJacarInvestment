@@ -9,59 +9,40 @@ from datetime import datetime
 import re
 
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Jacar Pro V20 - Soft Edition", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Jacar Pro V21", layout="wide", page_icon="📈")
 
-# CSS PARA COLOR CREMA Y CONTRASTE SUAVE
+# CSS: FONDO CREMA, RECUADROS BLANCOS, TEXTO GRIS PROFUNDO
 st.markdown("""
     <style>
-    /* Fondo principal color crema suave */
-    .stApp { 
-        background-color: #fdf6e3 !important; 
-    }
+    .stApp { background-color: #fdf6e3 !important; }
     
-    /* Títulos y textos generales en gris oscuro (no negro) */
-    h1, h2, h3, p, span, label { 
-        color: #586e75 !important; 
-    }
-
-    /* Tarjetas de Estrategia: Fondo crema más claro, bordes suaves */
+    /* Tarjetas de Estrategia: FONDO BLANCO PURO */
     .card-resumen { 
-        background-color: #eee8d5 !important; 
-        padding: 25px; 
-        border-radius: 15px; 
+        background-color: #ffffff !important; 
+        padding: 20px; 
+        border-radius: 12px; 
         border: 1px solid #dcd3b6 !important;
         margin-bottom: 20px;
         color: #586e75 !important;
-        box-shadow: 4px 4px 10px rgba(0,0,0,0.05);
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.05);
     }
     
-    .card-resumen h3 { 
-        color: #268bd2 !important; 
-        border-bottom: 2px solid #dcd3b6; 
-        padding-bottom: 10px; 
-    }
-
-    /* Colores de las señales */
-    .val-buy { color: #859900 !important; font-weight: bold; font-size: 1.3em; } /* Verde oliva */
-    .val-sell { color: #dc322f !important; font-weight: bold; font-size: 1.3em; } /* Rojo suave */
+    .card-resumen h3 { color: #268bd2 !important; margin-bottom: 15px; border-bottom: 1px solid #eee; }
     
-    /* Botones con estilo retro/suave */
-    .stButton>button { 
-        background-color: #eee8d5 !important; 
-        color: #586e75 !important; 
-        border: 1px solid #dcd3b6 !important;
-        border-radius: 8px;
-    }
-    .stButton>button:hover {
-        background-color: #dcd3b6 !important;
-        border-color: #93a1a1 !important;
+    /* Panel de Oportunidades VIP */
+    .panel-vip {
+        background-color: #ffffff !important;
+        border: 2px solid #268bd2 !important;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 25px;
     }
 
-    /* Ajuste de los Tabs */
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent !important;
-        color: #586e75 !important;
-    }
+    .val-buy { color: #859900 !important; font-weight: bold; }
+    .val-sell { color: #dc322f !important; font-weight: bold; }
+    
+    /* Forzar visibilidad de métricas */
+    [data-testid="stMetricValue"] { color: #586e75 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -77,13 +58,25 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 activos_dict = {
     "📈 Índices": {"Nasdaq 100": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI"},
     "💻 Tecnología": {"NVDA": "NVDA", "Apple": "AAPL", "MSFT": "MSFT", "Tesla": "TSLA"},
-    "⚱️ Materias Primas": {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F", "Gas Nat": "NG=F"},
-    "⚡ Energía": {"Iberdrola": "IBE.MC", "Repsol": "REP.MC", "Exxon": "XOM"},
-    "💵 Divisas": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "Bitcoin": "BTC-USD"}
+    "⚱️ Materias Primas": {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F"},
+    "💵 Divisas": {"EUR/USD": "EURUSD=X", "Bitcoin": "BTC-USD"}
 }
 
-# --- 2. SELECTOR DE ACTIVOS ---
-st.title("🏛️ Jacar Terminal - Cream Edition")
+# --- 2. VENTANA DE OPORTUNIDADES VIP (PARALELO) ---
+with st.container():
+    st.markdown('<div class="panel-vip"><h3>🚀 Radar de Oportunidades VIP (Alta Probabilidad)</h3>', unsafe_allow_html=True)
+    c_vip = st.columns(4)
+    # Simulamos escaneo de activos calientes
+    hot_assets = [("Bitcoin", "BTC-USD"), ("NVDA", "NVDA"), ("Oro", "GC=F"), ("Nasdaq", "^IXIC")]
+    for idx, (n, t) in enumerate(hot_assets):
+        with c_vip[idx]:
+            if st.button(f"🔥 {n}", key=f"vip_{t}", use_container_width=True):
+                st.session_state.activo_sel = n
+                st.session_state.ticker_sel = t
+                st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# --- 3. SELECTOR DE ACTIVOS TRADICIONAL ---
 tabs = st.tabs(list(activos_dict.keys()))
 for i, (categoria, lista) in enumerate(activos_dict.items()):
     with tabs[i]:
@@ -94,7 +87,7 @@ for i, (categoria, lista) in enumerate(activos_dict.items()):
                 st.session_state.ticker_sel = ticker
                 st.rerun()
 
-# --- 3. DATOS E INDICADORES ---
+# --- 4. DATOS E INDICADORES ---
 df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h")
 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 df = df.dropna()
@@ -110,62 +103,48 @@ if not df.empty:
     min_sesion = float(df['Low'].min())
     adx_val = float(df['ADX_14'].iloc[-1])
     
-    # Soporte y Resistencia
     res_line = float(df['High'].tail(20).max())
     sup_line = float(df['Low'].tail(20).min())
-    
     moneda = "€" if any(x in st.session_state.ticker_sel for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-    # --- 4. MÉTRICAS SUPERIORES ---
+    # MÉTRICAS
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("PRECIO", f"{precio_act:,.2f} {moneda}")
-    m2.metric("MÁX", f"{max_sesion:,.2f} {moneda}")
-    m3.metric("MÍN", f"{min_sesion:,.2f} {moneda}")
-    m4.metric("ADX", f"{adx_val:.1f}")
+    m1.metric("PRECIO ACTUAL", f"{precio_act:,.2f} {moneda}")
+    m2.metric("MÁX SESIÓN", f"{max_sesion:,.2f} {moneda}")
+    m3.metric("MÍN SESIÓN", f"{min_sesion:,.2f} {moneda}")
+    m4.metric("FUERZA ADX", f"{adx_val:.1f}")
 
-    # Gráfica con estilo claro
+    # GRÁFICA
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.8, 0.2], vertical_spacing=0.03, specs=[[{"secondary_y": True}], [{"secondary_y": False}]])
-    
-    # Velas (Colores clásicos para fondo claro)
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
                                  increasing_line_color='#859900', decreasing_line_color='#dc322f', name="Precio"), row=1, col=1)
-    
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#268bd2', width=1.5), name="EMA 20"), row=1, col=1)
-    
-    # Líneas de niveles
     fig.add_hline(y=res_line, line_dash="dash", line_color="#dc322f", opacity=0.4, row=1, col=1)
     fig.add_hline(y=sup_line, line_dash="dash", line_color="#859900", opacity=0.4, row=1, col=1)
     
-    # RSI
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4', width=1), name="RSI", opacity=0.5), row=1, col=1, secondary_y=True)
-    
-    # Estética del gráfico para modo claro
-    fig.update_layout(
-        plot_bgcolor='#fdf6e3',
-        paper_bgcolor='#fdf6e3',
-        font=dict(color='#586e75'),
-        xaxis=dict(gridcolor='#eee8d5', zerolinecolor='#eee8d5'),
-        yaxis=dict(gridcolor='#eee8d5', zerolinecolor='#eee8d5'),
-        height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10)
-    )
+    fig.update_layout(plot_bgcolor='#fdf6e3', paper_bgcolor='#fdf6e3', font=dict(color='#586e75'), height=500, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    if st.button(f"⚖️ ANALIZAR {st.session_state.activo_sel.upper()}"):
-        with st.spinner('IA analizando mercado...'):
+    if st.button(f"🔍 ANALIZAR CONFLUENCIA PARA {st.session_state.activo_sel.upper()}"):
+        with st.spinner('IA Generando Estrategia...'):
             ticker_obj = yf.Ticker(st.session_state.ticker_sel)
             news_text = "\n".join([n.get('title', '') for n in ticker_obj.news[:3]])
-            prompt = f"Analista. Activo: {st.session_state.activo_sel}. Precio: {precio_act} {moneda}. ADX: {adx_val:.1f}. RSI: {df['RSI'].iloc[-1]:.1f}. Capital: {st.session_state.wallet} EUR. Genera 3 opciones (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion: COMPRA/VENTA]|[Lotes]|[Entrada]|[TP]|[SL]"
+            prompt = f"Analista Senior. Activo: {st.session_state.activo_sel}. Precio: {precio_act} {moneda}. ADX: {adx_val:.1f}. RSI: {df['RSI'].iloc[-1]:.1f}. Capital: {st.session_state.wallet} EUR. Genera 3 opciones (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion: COMPRA/VENTA]|[Lotes]|[Entrada]|[TP]|[SL]"
+            
             resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
             res_ia = resp.choices[0].message.content
 
             def parse_tag(tag):
                 m = re.search(rf"{tag}:\s*(.*)", res_ia)
-                return [p.strip() for p in m.group(1).split('|')] if m else ["---"]*6
+                if m:
+                    parts = [p.strip() for p in m.group(1).split('|')]
+                    if len(parts) >= 6: return parts
+                return ["N/A", "Esperando", "0.0", "---", "---", "---"]
 
             st.session_state.señal_actual = {"intra": parse_tag("INTRA"), "medio": parse_tag("MEDIO"), "largo": parse_tag("LARGO"), "moneda": moneda}
             st.rerun()
 
-# --- 5. TARJETAS DE ESTRATEGIA (CREMA Y AZUL) ---
+# --- 5. TARJETAS DE RESULTADOS (FONDO BLANCO) ---
 if st.session_state.señal_actual:
     st.divider()
     cols_res = st.columns(3)
@@ -183,11 +162,11 @@ if st.session_state.señal_actual:
                 <p>⚡ <b>Acción:</b> <span class="{clase_txt}">{tipo}</span></p>
                 <p>📦 <b>Lotes:</b> {s[2]}</p>
                 <p>📥 <b>Entrada:</b> {s[3]} {mon}</p>
-                <p>🏁 <b>Take Profit:</b> <span style="color:#859900">{s[4]} {mon}</span></p>
-                <p>🛡️ <b>Stop Loss:</b> <span style="color:#dc322f">{s[5]} {mon}</span></p>
+                <p>🏁 <b>TP:</b> <span style="color:#859900">{s[4]} {mon}</span></p>
+                <p>🛡️ <b>SL:</b> <span style="color:#dc322f">{s[5]} {mon}</span></p>
             </div>
             """, unsafe_allow_html=True)
-            if st.button(f"Aceptar {name}", key=f"exe_{tag}"):
+            if st.button(f"Ejecutar {name}", key=f"exe_{tag}"):
                 st.session_state.cartera_abierta.append({
                     "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
                     "ticker": st.session_state.ticker_sel, "tipo": tipo, "lotes": s[2],
@@ -197,11 +176,11 @@ if st.session_state.señal_actual:
                 st.rerun()
 
 # --- 6. CARTERA ---
-st.sidebar.header("🏢 Wallet (EUR)")
-st.sidebar.metric("Balance", f"{st.session_state.wallet:,.2f} €")
+st.sidebar.header("🏢 Balance (EUR)")
+st.sidebar.metric("Equity", f"{st.session_state.wallet:,.2f} €")
 st.divider()
 if st.session_state.cartera_abierta:
-    st.subheader("💼 Posiciones")
+    st.subheader("💼 Posiciones Abiertas")
     for i, pos in enumerate(st.session_state.cartera_abierta):
         with st.container(border=True):
             st.write(f"**{pos['activo']}** ({pos['tipo']})")
