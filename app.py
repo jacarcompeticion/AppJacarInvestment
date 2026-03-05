@@ -11,12 +11,28 @@ import re
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
 
+# Estados de memoria
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'historial' not in st.session_state: st.session_state.historial = []
 if 'señal_actual' not in st.session_state: st.session_state.señal_actual = None
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = []
+# Nuevo estado para controlar la selección desde los botones
+if 'activo_seleccionado' not in st.session_state: st.session_state.activo_seleccionado = "Oro"
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+# Definición de activos (para usar en varios sitios)
+activos_dict = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
+
+# --- PUNTO 1: PANEL DE OPORTUNIDADES FUNCIONAL ---
+st.subheader("🚀 Acceso Rápido y Oportunidades")
+cols_top = st.columns(len(activos_dict))
+
+for i, nombre in enumerate(activos_dict.keys()):
+    # Al hacer clic, actualizamos el estado y recargamos
+    if cols_top[i].button(f"📊 {nombre}", key=f"top_{nombre}", use_container_width=True):
+        st.session_state.activo_seleccionado = nombre
+        st.rerun()
 
 # 2. PANEL LATERAL
 with st.sidebar:
