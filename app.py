@@ -9,35 +9,59 @@ from datetime import datetime
 import re
 
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Jacar Pro V19 - Contrast Fix", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Jacar Pro V20 - Soft Edition", layout="wide", page_icon="📈")
 
-# FORZAR ESTILO VISUAL (Solución al fondo negro)
+# CSS PARA COLOR CREMA Y CONTRASTE SUAVE
 st.markdown("""
     <style>
-    /* Fondo general de la app */
-    .stApp { background-color: #0b0e14; }
-    
-    /* Tarjetas de Estrategia: Forzamos fondo gris oscuro y texto blanco */
-    .card-resumen { 
-        background-color: #1c212d !important; 
-        padding: 25px; 
-        border-radius: 12px; 
-        border: 2px solid #3d4455 !important;
-        margin-bottom: 20px;
-        color: #ffffff !important;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.6);
+    /* Fondo principal color crema suave */
+    .stApp { 
+        background-color: #fdf6e3 !important; 
     }
     
-    /* Forzar color de etiquetas dentro de tarjetas */
-    .card-resumen h3 { color: #4dabf7 !important; text-align: center; border-bottom: 1px solid #3d4455; padding-bottom: 10px; }
-    .card-resumen p { color: #e9ecef !important; font-size: 1.05em; margin: 8px 0; }
+    /* Títulos y textos generales en gris oscuro (no negro) */
+    h1, h2, h3, p, span, label { 
+        color: #586e75 !important; 
+    }
+
+    /* Tarjetas de Estrategia: Fondo crema más claro, bordes suaves */
+    .card-resumen { 
+        background-color: #eee8d5 !important; 
+        padding: 25px; 
+        border-radius: 15px; 
+        border: 1px solid #dcd3b6 !important;
+        margin-bottom: 20px;
+        color: #586e75 !important;
+        box-shadow: 4px 4px 10px rgba(0,0,0,0.05);
+    }
     
-    /* Colores de acción */
-    .val-buy { color: #22c55e !important; font-weight: bold; font-size: 1.2em; }
-    .val-sell { color: #ef4444 !important; font-weight: bold; font-size: 1.2em; }
+    .card-resumen h3 { 
+        color: #268bd2 !important; 
+        border-bottom: 2px solid #dcd3b6; 
+        padding-bottom: 10px; 
+    }
+
+    /* Colores de las señales */
+    .val-buy { color: #859900 !important; font-weight: bold; font-size: 1.3em; } /* Verde oliva */
+    .val-sell { color: #dc322f !important; font-weight: bold; font-size: 1.3em; } /* Rojo suave */
     
-    /* Botones de ejecución */
-    .stButton>button { border-radius: 8px; font-weight: bold; }
+    /* Botones con estilo retro/suave */
+    .stButton>button { 
+        background-color: #eee8d5 !important; 
+        color: #586e75 !important; 
+        border: 1px solid #dcd3b6 !important;
+        border-radius: 8px;
+    }
+    .stButton>button:hover {
+        background-color: #dcd3b6 !important;
+        border-color: #93a1a1 !important;
+    }
+
+    /* Ajuste de los Tabs */
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent !important;
+        color: #586e75 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -59,7 +83,7 @@ activos_dict = {
 }
 
 # --- 2. SELECTOR DE ACTIVOS ---
-st.title("🏛️ Jacar Terminal - Edición Contraste")
+st.title("🏛️ Jacar Terminal - Cream Edition")
 tabs = st.tabs(list(activos_dict.keys()))
 for i, (categoria, lista) in enumerate(activos_dict.items()):
     with tabs[i]:
@@ -70,7 +94,7 @@ for i, (categoria, lista) in enumerate(activos_dict.items()):
                 st.session_state.ticker_sel = ticker
                 st.rerun()
 
-# --- 3. DATOS E INDICADORES (ADX INCLUIDO) ---
+# --- 3. DATOS E INDICADORES ---
 df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h")
 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 df = df.dropna()
@@ -86,7 +110,7 @@ if not df.empty:
     min_sesion = float(df['Low'].min())
     adx_val = float(df['ADX_14'].iloc[-1])
     
-    # Soporte y Resistencia Dinámica
+    # Soporte y Resistencia
     res_line = float(df['High'].tail(20).max())
     sup_line = float(df['Low'].tail(20).min())
     
@@ -94,25 +118,43 @@ if not df.empty:
 
     # --- 4. MÉTRICAS SUPERIORES ---
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("PRECIO ACTUAL", f"{precio_act:,.2f} {moneda}")
-    m2.metric("MÁX SESIÓN", f"{max_sesion:,.2f} {moneda}")
-    m3.metric("MÍN SESIÓN", f"{min_sesion:,.2f} {moneda}")
-    m4.metric("FUERZA ADX", f"{adx_val:.1f}")
+    m1.metric("PRECIO", f"{precio_act:,.2f} {moneda}")
+    m2.metric("MÁX", f"{max_sesion:,.2f} {moneda}")
+    m3.metric("MÍN", f"{min_sesion:,.2f} {moneda}")
+    m4.metric("ADX", f"{adx_val:.1f}")
 
-    # Gráfica
+    # Gráfica con estilo claro
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.8, 0.2], vertical_spacing=0.03, specs=[[{"secondary_y": True}], [{"secondary_y": False}]])
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='yellow', width=1), name="EMA 20"), row=1, col=1)
-    fig.add_hline(y=res_line, line_dash="dash", line_color="#ff4b4b", opacity=0.5, row=1, col=1)
-    fig.add_hline(y=sup_line, line_dash="dash", line_color="#00ff88", opacity=0.5, row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='magenta', width=1, dash='dot'), name="RSI", opacity=0.3), row=1, col=1, secondary_y=True)
+    
+    # Velas (Colores clásicos para fondo claro)
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
+                                 increasing_line_color='#859900', decreasing_line_color='#dc322f', name="Precio"), row=1, col=1)
+    
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#268bd2', width=1.5), name="EMA 20"), row=1, col=1)
+    
+    # Líneas de niveles
+    fig.add_hline(y=res_line, line_dash="dash", line_color="#dc322f", opacity=0.4, row=1, col=1)
+    fig.add_hline(y=sup_line, line_dash="dash", line_color="#859900", opacity=0.4, row=1, col=1)
+    
+    # RSI
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4', width=1), name="RSI", opacity=0.5), row=1, col=1, secondary_y=True)
+    
+    # Estética del gráfico para modo claro
+    fig.update_layout(
+        plot_bgcolor='#fdf6e3',
+        paper_bgcolor='#fdf6e3',
+        font=dict(color='#586e75'),
+        xaxis=dict(gridcolor='#eee8d5', zerolinecolor='#eee8d5'),
+        yaxis=dict(gridcolor='#eee8d5', zerolinecolor='#eee8d5'),
+        height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10)
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    if st.button(f"⚖️ ANALIZAR ESTRATEGIA COMPLETA"):
-        with st.spinner('IA analizando tendencias...'):
+    if st.button(f"⚖️ ANALIZAR {st.session_state.activo_sel.upper()}"):
+        with st.spinner('IA analizando mercado...'):
             ticker_obj = yf.Ticker(st.session_state.ticker_sel)
             news_text = "\n".join([n.get('title', '') for n in ticker_obj.news[:3]])
-            prompt = f"Analista XTB. Activo: {st.session_state.activo_sel}. Precio: {precio_act} {moneda}. ADX: {adx_val:.1f}. RSI: {df['RSI'].iloc[-1]:.1f}. Capital: {st.session_state.wallet} EUR. Noticias: {news_text}. Genera 3 opciones (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion: COMPRA/VENTA]|[Lotes]|[Entrada]|[TP]|[SL]"
+            prompt = f"Analista. Activo: {st.session_state.activo_sel}. Precio: {precio_act} {moneda}. ADX: {adx_val:.1f}. RSI: {df['RSI'].iloc[-1]:.1f}. Capital: {st.session_state.wallet} EUR. Genera 3 opciones (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion: COMPRA/VENTA]|[Lotes]|[Entrada]|[TP]|[SL]"
             resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
             res_ia = resp.choices[0].message.content
 
@@ -123,7 +165,7 @@ if not df.empty:
             st.session_state.señal_actual = {"intra": parse_tag("INTRA"), "medio": parse_tag("MEDIO"), "largo": parse_tag("LARGO"), "moneda": moneda}
             st.rerun()
 
-# --- 5. TARJETAS DE ESTRATEGIA (CON FONDO FORZADO) ---
+# --- 5. TARJETAS DE ESTRATEGIA (CREMA Y AZUL) ---
 if st.session_state.señal_actual:
     st.divider()
     cols_res = st.columns(3)
@@ -141,8 +183,8 @@ if st.session_state.señal_actual:
                 <p>⚡ <b>Acción:</b> <span class="{clase_txt}">{tipo}</span></p>
                 <p>📦 <b>Lotes:</b> {s[2]}</p>
                 <p>📥 <b>Entrada:</b> {s[3]} {mon}</p>
-                <p>🏁 <b>Take Profit:</b> <span style="color:#22c55e">{s[4]} {mon}</span></p>
-                <p>🛡️ <b>Stop Loss:</b> <span style="color:#ef4444">{s[5]} {mon}</span></p>
+                <p>🏁 <b>Take Profit:</b> <span style="color:#859900">{s[4]} {mon}</span></p>
+                <p>🛡️ <b>Stop Loss:</b> <span style="color:#dc322f">{s[5]} {mon}</span></p>
             </div>
             """, unsafe_allow_html=True)
             if st.button(f"Aceptar {name}", key=f"exe_{tag}"):
@@ -155,20 +197,16 @@ if st.session_state.señal_actual:
                 st.rerun()
 
 # --- 6. CARTERA ---
-st.sidebar.header("🏢 Cuenta Real (EUR)")
+st.sidebar.header("🏢 Wallet (EUR)")
 st.sidebar.metric("Balance", f"{st.session_state.wallet:,.2f} €")
 st.divider()
 if st.session_state.cartera_abierta:
-    st.subheader("💼 Operaciones en Curso")
+    st.subheader("💼 Posiciones")
     for i, pos in enumerate(st.session_state.cartera_abierta):
         with st.container(border=True):
-            c1, c2, c3 = st.columns([2, 2, 1])
-            c1.write(f"**{pos['activo']}** ({pos['tipo']})")
-            c1.write(f"Lotes: {pos['lotes']} | In: {pos['entrada']}")
-            pos['sl'] = c2.text_input("Ajustar SL", value=pos['sl'], key=f"sl_{pos['id']}")
-            pos['tp'] = c2.text_input("Ajustar TP", value=pos['tp'], key=f"tp_{pos['id']}")
-            pnl = c3.number_input("PnL (€)", key=f"pnl_{pos['id']}")
-            if c3.button("Cerrar", key=f"c_{pos['id']}"):
+            st.write(f"**{pos['activo']}** ({pos['tipo']})")
+            pnl = st.number_input("PnL (€)", key=f"pnl_{pos['id']}", value=0.0)
+            if st.button("Cerrar", key=f"c_{pos['id']}"):
                 st.session_state.wallet += pnl
                 st.session_state.cartera_abierta.pop(i)
                 st.rerun()
