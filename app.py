@@ -38,9 +38,9 @@ if not data.empty:
     low_24h = data['Low'].min()
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Precio Actual", f"{precio_act:.4f}")
-    col2.metric("Máximo 24h", f"{high_24h:.4f}")
-    col3.metric("Mínimo 24h", f"{low_24h:.4f}")
+    col1.metric("Precio Actual", f"{float(precio_act):.4f}")
+    col2.metric("Máximo Reciente", f"{float(high_24h):.4f}")
+    col3.metric("Mínimo Reciente", f"{float(low_24h):.4f}")
 
     # --- GRÁFICO DE VELAS PROFESIONAL ---
     fig = go.Figure(data=[go.Candlestick(x=data.index,
