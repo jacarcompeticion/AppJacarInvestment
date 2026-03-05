@@ -105,47 +105,60 @@ if not df.empty:
     # Eje Y del volumen más discreto
     fig.update_yaxes(showticklabels=False, row=2, col=1)
 
+    # --- DIBUJO TÉCNICO DE LA ORDEN (Punto 11) ---
+    if 'trade_coords' in st.session_state:
+        tc = st.session_state.trade_coords
+        # Color verde para compra, rojo para venta
+        color_zona = "rgba(0, 255, 0, 0.2)" if "COMPRA" in tc['tipo'].upper() else "rgba(255, 0, 0, 0.2)"
+        
+        # Dibujar área proyectada de beneficio
+        fig.add_hrect(y0=tc['entrada'], y1=tc['tp'], fillcolor=color_zona, line_width=0, layer="below", row=1, col=1)
+        # Dibujar línea de Stop Loss
+        fig.add_hline(y=tc['sl'], line_color="red", line_width=2, line_dash="dash", row=1, col=1)
+        # Dibujar línea de Entrada
+        fig.add_hline(y=tc['entrada'], line_color="white", line_width=1, row=1, col=1)
+        
     st.plotly_chart(fig, use_container_width=True)
     
-    # 6. GENERACIÓN DE ORDEN Y REGISTRO (Puntos 3, 4)
+    # 6. GENERACIÓN DE ORDEN Y EXTRACCIÓN DE DATOS (Puntos 3, 4, 11)
     if st.button("🧠 ANALIZAR Y GENERAR ORDEN"):
-        with st.spinner('IA Calculando rangos basándose en contexto geopolítico y técnico...'):
+        with st.spinner('Calculando estrategia...'):
             prompt = f"""
-            Analiza {seleccion}. Precio: {precio_act}. RSI: {df['RSI'].iloc[-1]:.2f}. 
+            Trader profesional. Activo: {seleccion} a {precio_act:.4f}. RSI: {df['RSI'].iloc[-1]:.2f}.
             Soporte: {soporte}, Resistencia: {resistencia}. Estilo: {perfil}. Objetivo: {obj_diario}.
-            Dame una orden DIRECTA: Acción, Entrada, Lotes, SL y TP. 
-            Ten en cuenta patrones históricos y situación de mercado actual.
+            
+            Responde estrictamente en este formato para que el sistema lea los datos:
+            ACCIÓN: [COMPRA/VENTA/ESPERAR]
+            ENTRADA: [Precio]
+            SL: [Precio]
+            TP: [Precio]
+            LOTES: [Cantidad]
+            MOTIVO: [Breve frase técnica]
             """
+            
             resp = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": "Eres un ejecutor de trading preciso."}, {"role": "user", "content": prompt}]
+                messages=[{"role": "system", "content": "Eres un ejecutor de trading. Solo respondes con el formato solicitado."}, 
+                          {"role": "user", "content": prompt}]
             )
-            st.session_state.ultima_orden = resp.choices[0].message.content
-            st.session_state.precio_sugerido = precio_act
-
-    if 'ultima_orden' in st.session_state:
-        st.markdown("---")
-        st.subheader("📋 Orden Detectada")
-        st.info(st.session_state.ultima_orden)
-        
-        with st.expander("✅ REGISTRAR EJECUCIÓN (Journaling)", expanded=True):
-            col_reg1, col_reg2, col_reg3 = st.columns(3)
-            p_entrada = col_reg1.number_input("Precio Real de Entrada", value=st.session_state.precio_sugerido)
-            lotes_real = col_reg2.number_input("Lotes Finales", value=0.1)
-            pnl = col_reg3.number_input("Resultado Final ($)", value=0.0)
             
-            if st.button("💾 Guardar en Historial y Actualizar Bankroll"):
-                st.session_state.wallet += pnl
-                st.session_state.historial.append({
-                    "Fecha": datetime.now().strftime("%d/%m %H:%M"),
-                    "Activo": seleccion,
-                    "Entrada": p_entrada,
-                    "Resultado": pnl
-                })
-                st.success("¡Operación registrada! El balance se ha actualizado.")
-                # Limpiar orden actual para la siguiente
-                del st.session_state.ultima_orden
-                st.rerun()
+            respuesta = resp.choices[0].message.content
+            st.session_state.ultima_orden = respuesta
+            
+            # Extraer coordenadas para el gráfico
+            try:
+                lineas = respuesta.split('\n')
+                datos = {l.split(': ')[0].strip(): l.split(': ')[1].strip() for l in lineas if ': ' in l}
+                
+                st.session_state.trade_coords = {
+                    "entrada": float(datos['ENTRADA']),
+                    "sl": float(datos['SL']),
+                    "tp": float(datos['TP']),
+                    "tipo": datos['ACCIÓN']
+                }
+                st.rerun() # Recargamos para que el dibujo aparezca en el gráfico
+            except:
+                st.warning("Orden generada, pero el formato no permitió dibujarla visualmente.")
 
     # 7. RESUMEN SEMANAL/MENSUAL (Punto 4)
     st.divider()
