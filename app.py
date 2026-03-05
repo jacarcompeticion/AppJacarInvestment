@@ -10,15 +10,13 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V49", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V50", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
 
 def limpiar_numero(valor):
-    """Limpia strings con formatos extraños (comas, símbolos) para convertirlos a float."""
     if isinstance(valor, (int, float)): return float(valor)
-    # Solo dejamos dígitos y el punto decimal
     clean = re.sub(r'[^\d.]', '', str(valor).replace(',', '.'))
     try: return float(clean) if clean else 0.0
     except: return 0.0
@@ -48,10 +46,8 @@ def calcular_metricas():
     nominal_total = 0
     for p in st.session_state.cartera_abierta:
         nominal_total += limpiar_numero(p.get('valor_nominal', 0))
-    
     margen_usado = nominal_total * 0.05
     margen_disponible = float(st.session_state.wallet) - margen_usado
-    
     win_rate = 50.0
     if st.session_state.historial:
         try:
@@ -76,30 +72,32 @@ def auto_analizar(t, n):
     try:
         df_t = obtener_datos(t, "5d", "15m")
         if df_t.empty: return None
-        p_act = float(df_t['Close'].iloc[-1])
+        p_act = round(float(df_t['Close'].iloc[-1]), 2)
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"""Analiza {n} a {p_act}. 
-        Formato ESTRICTO (3 lineas):
-        TAG: [Probabilidad]% | ACCION | Lotes | Entrada | Take Profit | Stop Loss | Nominal"""
+        # Prompt optimizado para evitar ceros y decimales infinitos
+        prompt = f"""Analiza {n} con precio actual {p_act}. 
+        Proporciona niveles técnicos coherentes (TP y SL NUNCA pueden ser 0).
+        Responde exclusivamente en 3 líneas con este formato:
+        TAG: [X]% Probabilidad | ACCION (COMPRA/VENTA) | Lotes | Entrada | Take Profit | Stop Loss | Nominal"""
         
-        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0)
+        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.2)
         lineas = resp.choices[0].message.content.split('\n')
         
         data_final = {"moneda": moneda, "p_actual": p_act}
-        tags = ["INTRA", "MEDIO", "LARGO"]
-        
-        for tag in tags:
-            encontrado = False
+        for tag in ["INTRA", "MEDIO", "LARGO"]:
             for line in lineas:
                 if tag in line.upper():
-                    parts = line.replace('*','').replace('[','').replace(']','').split(':')[-1].split('|')
-                    if len(parts) >= 7:
-                        data_final[tag.lower()] = [p.strip() for p in parts]
-                        encontrado = True
+                    parts = line.split('|')
+                    if len(parts) >= 6:
+                        # Limpiamos cada parte de la respuesta
+                        p_limpias = [p.strip().replace('*','') for p in parts]
+                        # Aseguramos que el nombre del tag no ensucie la probabilidad
+                        p_limpias[0] = p_limpias[0].split(':')[-1].strip()
+                        data_final[tag.lower()] = p_limpias
                         break
-            if not encontrado: # Fallback si la IA falla en una línea
-                data_final[tag.lower()] = ["50%", "ESPERAR", "0.10", str(p_act), "0", "0", "0"]
+            if tag.lower() not in data_final:
+                data_final[tag.lower()] = ["50%", "ESPERAR", "0.10", str(p_act), str(p_act*1.02), str(p_act*0.98), "0"]
         return data_final
     except: return None
 
@@ -135,7 +133,7 @@ with t_main[1]: # INDICES
 with t_main[2]: # MATERIAL
     grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat")
 
-with t_main[3]: # DIVISAS (Divisas)
+with t_main[3]: # DIVISAS
     grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD"}, "div")
 
 # --- 5. GRÁFICO ---
@@ -158,7 +156,7 @@ if not df.empty:
     fig.update_layout(height=450, xaxis_rangeslider_visible=False, template="plotly_white", margin=dict(t=5,b=5))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. ESTRATEGIAS ---
+# --- 6. ESTRATEGIAS (REDISEÑO DE LIMPIEZA) ---
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     res = st.session_state.analisis_auto
@@ -169,24 +167,28 @@ if st.session_state.analisis_auto:
         es_compra = "COMPRA" in s[1].upper()
         bg, b_col = ("#e8f5e9", "#4caf50") if es_compra else ("#ffebee", "#f44336")
 
+        # Redondeo visual para evitar decimales infinitos
+        ent_vis = round(limpiar_numero(s[3]), 2)
+        tp_vis = round(limpiar_numero(s[4]), 2)
+        sl_vis = round(limpiar_numero(s[5]), 2)
+
         with cols_ia[i]:
             st.markdown(f"""<div style="background-color:{bg}; padding:15px; border-radius:12px; border:2px solid {b_col}; min-height:220px;">
                 <h4 style="margin:0;">{tag.upper()} <span style="float:right; color:#1a73e8;">🎯 {s[0]}</span></h4>
                 <p style="text-align:center; font-weight:bold; font-size:1.3em; color:#333; margin:12px 0;">{s[1]}</p>
-                <p style="margin:2px;">Entrada: <b>{s[3]}</b> | Lotes: <b>{s[2]}</b></p>
-                <p style="margin:2px; color:#2e7d32;"><b>Take Profit:</b> {s[4]}</p>
-                <p style="margin:2px; color:#c62828;"><b>Stop Loss:</b> {s[5]}</p>
+                <p style="margin:2px;">Entrada: <b>{ent_vis}</b> | Lotes: <b>{s[2]}</b></p>
+                <p style="margin:2px; color:#2e7d32;"><b>Take Profit:</b> {tp_vis}</p>
+                <p style="margin:2px; color:#c62828;"><b>Stop Loss:</b> {sl_vis}</p>
                 <p style="font-size:0.8em; color:grey; margin-top:8px;">Riesgo Máx: {(wr_actual/100)*2:.1f}%</p>
             </div>""", unsafe_allow_html=True)
             
             with st.popover(f"🚀 Ejecutar {tag.upper()}", use_container_width=True):
-                # Limpiamos los valores antes de pasarlos al input para evitar ValueError
                 l_f = st.number_input("Lotes", value=limpiar_numero(s[2]), step=0.01, key=f"l_{tag}")
-                p_f = st.number_input("Entrada", value=limpiar_numero(s[3]), key=f"p_{tag}")
+                p_f = st.number_input("Entrada", value=ent_vis, key=f"p_{tag}")
                 if st.button("Confirmar", key=f"conf_{tag}", use_container_width=True):
                     st.session_state.cartera_abierta.append({
                         "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
-                        "tipo": s[1], "lotes": l_f, "entrada": p_f, "tp": s[4], "sl": s[5], 
+                        "tipo": s[1], "lotes": l_f, "entrada": p_f, "tp": tp_vis, "sl": sl_vis, 
                         "valor_nominal": l_f * p_f, "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
                     })
                     guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
@@ -203,7 +205,7 @@ with st.sidebar:
             with st.expander(f"📌 {pos['activo']} ({pos['lotes']} L)"):
                 ent_v = limpiar_numero(pos['entrada'])
                 lot_v = limpiar_numero(pos['lotes'])
-                p_out = st.number_input("Precio Cierre", value=ent_v, key=f"out_{pos['id']}")
+                p_out = st.number_input("Precio Cierre", value=ent_v, key=f"out_{pos['id']}", format="%.2f")
                 es_buy = "COMPRA" in str(pos['tipo']).upper()
                 pnl_op = (p_out - ent_v) * lot_v * 100 if es_buy else (ent_v - p_out) * lot_v * 100
                 pnl_total_curso += pnl_op
