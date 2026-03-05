@@ -4,6 +4,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from openai import OpenAI
 import os
+from streamlit_autorefresh import st_autorefresh
+
+# Refrescar la app automáticamente cada 60 segundos
+count = st_autorefresh(interval=60000, limit=100, key="framer")
+
 
 # 1. Configuración de página
 st.set_page_config(page_title="AppJacarInvestment", layout="wide")
