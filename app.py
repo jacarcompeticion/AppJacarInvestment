@@ -34,23 +34,20 @@ for i, nombre in enumerate(activos_dict.keys()):
         st.session_state.activo_seleccionado = nombre
         st.rerun()
 
-# 2. PANEL LATERAL
+# 2. PANEL LATERAL (Sidebar conectado al estado)
 with st.sidebar:
     st.title(f"💰 Balance: {st.session_state.wallet:,.2f} USD")
     st.divider()
     obj_diario = st.number_input("Objetivo Diario ($)", value=200.0)
-    perfil = st.radio("Estrategia", ["Scalping (Muchas/Poco)", "Swing (Pocas/Mucho)"])
+    perfil = st.radio("Estrategia", ["Scalping", "Swing"])
     tf_visual = st.selectbox("Temporalidad", ["1m", "5m", "15m", "1h", "1d"], index=2)
     st.divider()
-    activos = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
-    seleccion = st.selectbox("Seleccionar Activo", list(activos.keys()))
-
-# --- PUNTO 1: PANEL DE OPORTUNIDADES (Top Profit) ---
-st.subheader("🚀 Oportunidades con mayor Potencial")
-cols_top = st.columns(len(activos))
-for i, (nombre, ticker) in enumerate(activos.items()):
-    # Simulamos un escaneo rápido para el Punto 1
-    cols_top[i].button(f"🔥 {nombre}", key=f"top_{nombre}", help=f"Ver análisis de {nombre}")
+    
+    # El selectbox ahora se sincroniza con los botones superiores
+    seleccion = st.selectbox("Seleccionar Activo", list(activos_dict.keys()), 
+                             index=list(activos_dict.keys()).index(st.session_state.activo_seleccionado))
+    # Actualizamos el estado si el usuario cambia el selectbox manualmente
+    st.session_state.activo_seleccionado = seleccion
 
 # 3. OBTENCIÓN DE DATOS
 ajuste_temp = {"1m": "1d", "5m": "5d", "15m": "5d", "1h": "1mo", "1d": "max"}
