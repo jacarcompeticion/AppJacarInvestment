@@ -9,34 +9,44 @@ from datetime import datetime
 import re
 
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Jacar Pro V16", layout="wide", page_icon="⚖️")
+st.set_page_config(page_title="Jacar Pro V17", layout="wide", page_icon="📈")
 
+# CSS para corregir visibilidad y tarjetas
 st.markdown("""
     <style>
-    .buy-card { border-left: 5px solid #00ff00; padding-left: 15px; background-color: #1a1c23; border-radius: 0 10px 10px 0; }
-    .sell-card { border-left: 5px solid #ff4b4b; padding-left: 15px; background-color: #1a1c23; border-radius: 0 10px 10px 0; }
-    .stMetric { background-color: #0e1117; border: 1px solid #333; padding: 10px; border-radius: 10px; }
+    .stApp { background-color: #0e1117; }
+    .card-resumen { 
+        background-color: #1e2129; 
+        padding: 20px; 
+        border-radius: 10px; 
+        border: 1px solid #3b3f4b;
+        margin-bottom: 15px;
+        color: white;
+    }
+    .val-destacado { color: #00ff00; font-weight: bold; font-size: 1.1em; }
+    .val-short { color: #ff4b4b; font-weight: bold; font-size: 1.1em; }
     </style>
     """, unsafe_allow_html=True)
 
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = []
-if 'activo_sel' not in st.session_state: st.session_state.activo_sel = "Oro"
-if 'ticker_sel' not in st.session_state: st.session_state.ticker_sel = "GC=F"
+if 'activo_sel' not in st.session_state: 
+    st.session_state.activo_sel = "Oro"
+    st.session_state.ticker_sel = "GC=F"
 if 'señal_actual' not in st.session_state: st.session_state.señal_actual = None
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 activos_dict = {
-    "💻 Tecnología (USD)": {"NVDA": "NVDA", "Apple": "AAPL", "MSFT": "MSFT", "Tesla": "TSLA"},
+    "💻 Tecnología": {"NVDA": "NVDA", "Apple": "AAPL", "MSFT": "MSFT", "Tesla": "TSLA"},
     "⚡ Energía": {"Iberdrola": "IBE.MC", "Repsol": "REP.MC", "Exxon": "XOM", "Chevron": "CVX"},
-    "⚱️ Materias Primas (USD)": {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F", "Gas Nat": "NG=F"},
+    "⚱️ Materias Primas": {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F", "Gas Nat": "NG=F"},
     "💵 Divisas": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X", "Bitcoin": "BTC-USD"},
     "📈 Índices": {"Nasdaq 100": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI"}
 }
 
-# --- 2. MENU VISUAL ---
-st.title("🏛️ Jacar Global Institutional Terminal")
+# --- 2. MENU SUPERIOR ---
+st.title("🏛️ Jacar Institutional Terminal")
 tabs = st.tabs(list(activos_dict.keys()))
 for i, (categoria, lista) in enumerate(activos_dict.items()):
     with tabs[i]:
@@ -47,23 +57,7 @@ for i, (categoria, lista) in enumerate(activos_dict.items()):
                 st.session_state.ticker_sel = ticker
                 st.rerun()
 
-# --- 3. SIDEBAR ---
-with st.sidebar:
-    st.header("🏢 Gestión de Capital")
-    st.metric("Balance Cuenta", f"{st.session_state.wallet:,.2f} €")
-    st.divider()
-    if st.button("🚀 COPILOTO: ANALIZAR RIESGO", use_container_width=True):
-        if not st.session_state.cartera_abierta:
-            st.warning("Sin posiciones activas.")
-        else:
-            for pos in st.session_state.cartera_abierta:
-                t = yf.Ticker(pos['ticker'])
-                p_actual = t.history(period="1d")['Close'].iloc[-1]
-                p_gestion = f"Soy analista. Posición {pos['tipo']} en {pos['activo']}. Entrada: {pos['entrada']}, SL: {pos['sl']}, TP: {pos['tp']}. Precio Actual: {p_actual}. Indica si asegurar beneficios o prolongar. Breve."
-                r = client.chat.completions.create(model="gpt-4o", messages=[{"role":"user", "content":p_gestion}])
-                st.info(f"**{pos['activo']}**: {r.choices[0].message.content}")
-
-# --- 4. GRÁFICA ---
+# --- 3. DATOS Y CÁLCULOS ---
 df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h")
 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 df = df.dropna()
@@ -71,40 +65,62 @@ df = df.dropna()
 if not df.empty:
     df['EMA_20'] = ta.ema(df['Close'], length=20)
     df['RSI'] = ta.rsi(df['Close'], length=14)
-    precio_act = float(df['Close'].iloc[-1])
-    moneda = "€" if any(x in st.session_state.ticker_sel for x in [".MC", "GDAXI", "IBEX"]) else "$"
     
+    # Valores de Sesión
+    precio_act = float(df['Close'].iloc[-1])
+    max_sesion = float(df['High'].max())
+    min_sesion = float(df['Low'].min())
+    
+    # Soportes y Resistencias simples (Pivotes)
+    soporte = float(df['Low'].tail(20).min())
+    resistencia = float(df['High'].tail(20).max())
+    
+    moneda = "€" if any(x in st.session_state.ticker_sel for x in [".MC", "GDAXI", "IBEX"]) else "$"
+
+    # --- 4. GRÁFICA PROFESIONAL ---
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.8, 0.2], vertical_spacing=0.03, specs=[[{"secondary_y": True}], [{"secondary_y": False}]])
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name=f"{st.session_state.activo_sel}"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='yellow', width=1.5), name="EMA 20"), row=1, col=1)
+    
+    # Velas y EMA (SOLO UNA VEZ)
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1, secondary_y=False)
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='yellow', width=1.5), name="EMA 20"), row=1, col=1, secondary_y=False)
+    
+    # Soportes y Resistencias (Líneas horizontales)
+    fig.add_hline(y=resistencia, line_dash="dash", line_color="red", annotation_text="Resistencia", row=1, col=1)
+    fig.add_hline(y=soporte, line_dash="dash", line_color="green", annotation_text="Soporte", row=1, col=1)
+    
+    # RSI (SOLO UNA VEZ en eje secundario)
     fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='magenta', width=1, dash='dot'), name="RSI", opacity=0.4), row=1, col=1, secondary_y=True)
+    
+    # Volumen
+    colors_vol = ['#26a69a' if row['Close'] >= row['Open'] else '#ef5350' for _, row in df.iterrows()]
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors_vol, name="Volumen"), row=2, col=1)
+
+    fig.update_layout(template="plotly_dark", height=550, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-    if st.button(f"⚖️ ANALIZAR {st.session_state.activo_sel.upper()} ({moneda})"):
-        with st.spinner('Procesando datos...'):
+    # Métricas de Sesión
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Precio Actual", f"{precio_act:,.2f} {moneda}")
+    c2.metric("Máximo Sesión", f"{max_sesion:,.2f} {moneda}", delta_color="normal")
+    c3.metric("Mínimo Sesión", f"{min_sesion:,.2f} {moneda}", delta_color="inverse")
+
+    # --- 5. ANÁLISIS ---
+    if st.button(f"⚖️ GENERAR ESTRATEGIA: {st.session_state.activo_sel.upper()}"):
+        with st.spinner('Analizando confluencia...'):
             ticker_obj = yf.Ticker(st.session_state.ticker_sel)
-            news_list = ticker_obj.news[:5]
-            news_text = "\n".join([n.get('title', '') for n in news_list])
-            
-            prompt = f"""Analista XTB. Activo: {st.session_state.activo_sel}. Precio: {precio_act} {moneda}. RSI: {df['RSI'].iloc[-1]:.1f}. Capital: {st.session_state.wallet} EUR. Noticias: {news_text}.
-            Genera 3 opciones (INTRA, MEDIO, LARGO) con Probabilidad, Acción (COMPRA/VENTA), Lotes (Riesgo 1% Bank en EUR), Entrada, TP y SL. 
-            IMPORTANTE: Entrada, TP y SL en {moneda}. Lotes calculados para bank en EUR.
-            Formato: TAG: [Prob]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]"""
-            
+            news_text = "\n".join([n.get('title', '') for n in ticker_obj.news[:3]])
+            prompt = f"Analista XTB. Activo: {st.session_state.activo_sel}. Precio: {precio_act} {moneda}. RSI: {df['RSI'].iloc[-1]:.1f}. Capital: {st.session_state.wallet} EUR. Genera 3 opciones (INTRA, MEDIO, LARGO). Formato: TAG: [Probabilidad %]|[Acción: COMPRA o VENTA]|[Lotes]|[Entrada]|[TP]|[SL]"
             resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
             res_ia = resp.choices[0].message.content
 
             def parse_tag(tag):
                 m = re.search(rf"{tag}:\s*(.*)", res_ia)
-                if m:
-                    parts = m.group(1).split('|')
-                    return [p.strip() for p in parts]
-                return ["---"]*6
+                return [p.strip() for p in m.group(1).split('|')] if m else ["---"]*6
 
             st.session_state.señal_actual = {"intra": parse_tag("INTRA"), "medio": parse_tag("MEDIO"), "largo": parse_tag("LARGO"), "moneda": moneda}
             st.rerun()
 
-# --- 5. RESULTADOS ---
+# --- 6. TARJETAS DE RESULTADOS (CORREGIDO FONDO Y DATOS) ---
 if st.session_state.señal_actual:
     st.divider()
     cols_res = st.columns(3)
@@ -112,12 +128,20 @@ if st.session_state.señal_actual:
     for i, (name, tag) in enumerate([("INTRADÍA", "intra"), ("MEDIO PLAZO", "medio"), ("LARGO PLAZO", "largo")]):
         s = st.session_state.señal_actual[tag]
         tipo = s[1].upper()
-        card_style = "buy-card" if "COMPRA" in tipo else "sell-card"
-        with cols_res[i].container():
-            st.markdown(f"<div class='{card_style}'><h3>{name}</h3>", unsafe_allow_html=True)
-            st.metric("Éxito", s[0])
-            st.write(f"**{tipo}** | **{s[2]} lotes**")
-            st.write(f"In: {s[3]} {mon} | TP: {s[4]} {mon}")
+        estilo_texto = "val-destacado" if "COMPRA" in tipo else "val-short"
+        
+        with cols_res[i]:
+            st.markdown(f"""
+            <div class="card-resumen">
+                <h3>{name}</h3>
+                <p>Probabilidad: <b>{s[0]}</b></p>
+                <p>Acción: <span class="{estilo_texto}">{tipo}</span></p>
+                <p>Lotes: <b>{s[2]}</b></p>
+                <p>Entrada: <b>{s[3]} {mon}</b></p>
+                <p>TP: <span style="color:#00ff00">{s[4]} {mon}</span></p>
+                <p>SL: <span style="color:#ff4b4b">{s[5]} {mon}</span></p>
+            </div>
+            """, unsafe_allow_html=True)
             if st.button(f"Ejecutar {name}", key=f"exe_{tag}"):
                 st.session_state.cartera_abierta.append({
                     "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
@@ -127,20 +151,21 @@ if st.session_state.señal_actual:
                 st.session_state.señal_actual = None
                 st.rerun()
 
-# --- 6. CARTERA ---
+# --- 7. CARTERA Y BALANCE ---
+st.sidebar.header("🏢 Balance General")
+st.sidebar.metric("Cuenta (EUR)", f"{st.session_state.wallet:,.2f} €")
 st.divider()
-st.subheader("💼 Posiciones Abiertas")
+st.subheader("💼 Operaciones Activas")
 if st.session_state.cartera_abierta:
     for i, pos in enumerate(st.session_state.cartera_abierta):
         with st.container(border=True):
             c1, c2, c3 = st.columns([2, 2, 1])
-            pref = "🟢" if "COMPRA" in pos['tipo'] else "🔴"
-            c1.markdown(f"**{pref} {pos['activo']}** ({pos['tipo']})")
-            c1.write(f"Entrada: {pos['entrada']} {pos['moneda']}")
-            pos['sl'] = c2.text_input(f"SL ({pos['moneda']})", value=pos['sl'], key=f"sl_{pos['id']}")
-            pos['tp'] = c2.text_input(f"TP ({pos['moneda']})", value=pos['tp'], key=f"tp_{pos['id']}")
+            c1.markdown(f"**{pos['activo']}** | {pos['tipo']} ({pos['lotes']} lotes)")
+            c1.write(f"In: {pos['entrada']} {pos['moneda']}")
+            pos['sl'] = c2.text_input(f"Ajustar SL", value=pos['sl'], key=f"sl_{pos['id']}")
+            pos['tp'] = c2.text_input(f"Ajustar TP", value=pos['tp'], key=f"tp_{pos['id']}")
             pnl = c3.number_input("PnL (€)", key=f"pnl_{pos['id']}")
-            if c3.button("Cerrar Posición", key=f"c_{pos['id']}"):
+            if c3.button("Cerrar", key=f"c_{pos['id']}"):
                 st.session_state.wallet += pnl
                 st.session_state.cartera_abierta.pop(i)
                 st.rerun()
