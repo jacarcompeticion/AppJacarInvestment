@@ -1,24 +1,23 @@
 import streamlit as st
-import yfinance as yf 
+import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from openai import OpenAI
 import os
 
 # 1. Configuración de página
-st.set_page_config(page_title="AppJacarInvestment", layout="wide", initial_sidebar_state="expanded")
-st.title("🛡️ AppJacarInvestment: Terminal de Ejecución")
+st.set_page_config(page_title="AppJacarInvestment", layout="wide")
+st.title("🛡️ AppJacarInvestment: Terminal Pro")
 
-# 2. Conexión con OpenAI (Secrets de Streamlit)
+# 2. Conexión con OpenAI
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# 3. Panel Lateral (Sidebar)
+# 3. Panel Lateral
 with st.sidebar:
-    st.header("💰 Gestión de Capital")
-    capital = st.number_input("Capital en Cuenta (USD)", value=18000.0)
-    riesgo_per = st.slider("Riesgo por operación (%)", 0.1, 5.0, 1.0)
+    st.header("💰 Cuenta")
+    capital = st.number_input("Capital (USD)", value=18000.0)
+    riesgo_per = st.slider("Riesgo (%)", 0.1, 5.0, 1.0)
     st.divider()
-    st.header("🔍 Selección de Activo")
     activos = {
         "Oro": "GC=F",
         "Petróleo Brent": "BZ=F",
@@ -26,91 +25,78 @@ with st.sidebar:
         "DAX 40": "^GDAXI",
         "EUR/USD": "EURUSD=X"
     }
-    seleccion = st.selectbox("Activo a analizar", list(activos.keys()))
+    seleccion = st.selectbox("Activo", list(activos.keys()))
 
-# 4. Descarga de datos de Yahoo Finance
+# 4. Descarga y Limpieza de Datos (IMPORTANTE)
 ticker = activos[seleccion]
 df = yf.download(ticker, period="5d", interval="15m")
 
 if not df.empty:
-    # Limpieza de datos para evitar errores en el gráfico
-    df = df.dropna()
+    # --- TRUCO PARA ARREGLAR LAS COLUMNAS ---
+    # Si Yahoo manda columnas dobles, esto las aplana a nombres simples: 'Open', 'Close', etc.
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
     
-    # Precios clave (convertidos a float para evitar errores de formato)
+    df = df.dropna()
+
+    # Precios clave
     precio_act = float(df['Close'].iloc[-1])
     high_recent = float(df['High'].max())
     low_recent = float(df['Low'].min())
 
-    # Indicadores visuales rápidos
     col1, col2, col3 = st.columns(3)
     col1.metric("Precio Actual", f"{precio_act:.4f}")
-    col2.metric("Máximo Reciente", f"{high_recent:.4f}")
-    col3.metric("Mínimo Reciente", f"{low_recent:.4f}")
+    col2.metric("Máximo", f"{high_recent:.4f}")
+    col3.metric("Mínimo", f"{low_recent:.4f}")
 
-    # 5. Gráfico de Velas Japonesas con Auto-Ajuste de Escala
+    # 5. Gráfico de Velas con Auto-Zoom
     fig = go.Figure(data=[go.Candlestick(
         x=df.index,
-        open=df['Open'], 
-        high=df['High'],
-        low=df['Low'], 
-        close=df['Close'],
-        name="Precio",
-        increasing_line_color='#00ff00', # Verde neón
-        decreasing_line_color='#ff0000'  # Rojo neón
+        open=df['Open'], high=df['High'],
+        low=df['Low'], close=df['Close'],
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
     )])
     
-    # Forzamos a que el eje Y se ajuste solo al precio actual (Zoom automático)
     fig.update_layout(
-        title=f"Gráfico de Velas - {seleccion} (15 min)",
-        xaxis_rangeslider_visible=False, 
         template="plotly_dark",
-        height=600,
-        margin=dict(l=50, r=50, t=50, b=50),
-        yaxis=dict(
-            autorange=True,      # <--- Esto fuerza el zoom al precio
-            fixedrange=False,    # Permite que tú muevas el gráfico arriba/abajo
-            side="right",        # El precio a la derecha, como en MetaTrader
-            tickformat=".4f"     # Muestra 4 decimales en el eje
-        ),
-        xaxis=dict(type='date')
+        height=500,
+        xaxis_rangeslider_visible=False,
+        yaxis=dict(autorange=True, fixedrange=False, side="right", tickformat=".4f"),
+        margin=dict(l=20, r=50, t=30, b=20)
     )
     
-    # Este comando es vital para que se renderice en Streamlit
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
+    st.plotly_chart(fig, use_container_width=True)
 
-    # 6. Lógica de la IA Ejecutora
+    # 6. Orden Directa de la IA
     if st.button("🚀 OBTENER ORDEN DE MERCADO DIRECTA"):
-        with st.spinner('IA analizando tendencia y calculando pips...'):
-            # Enviamos los últimos 15 cierres para que la IA vea la tendencia
-            ultimos_precios = df['Close'].tail(15).tolist()
+        with st.spinner('Analizando tendencia...'):
+            # Tomamos los últimos 20 cierres para que la IA vea la acción del precio
+            precios_lista = df['Close'].tail(20).tolist()
             
             prompt = f"""
-            Actúa como un TRADER ALGORÍTMICO PROFESIONAL.
-            ACTIVO: {seleccion} (Precio actual: {precio_act:.4f})
-            CONTEXTO: Máximo reciente {high_recent:.4f}, Mínimo reciente {low_recent:.4f}.
-            HISTORIAL RECIENTE (15 min): {ultimos_precios}
-            CAPITAL: {capital} USD. RIESGO: {riesgo_per}%.
+            Eres un TRADER EJECUTOR. No des consejos, da una ORDEN DE TRADING.
+            ACTIVO: {seleccion} a {precio_act:.4f}.
+            Contexto: Max {high_recent:.4f}, Min {low_recent:.4f}.
+            Últimos cierres: {precios_lista}
+            Capital: {capital} USD. Riesgo: {riesgo_per}%.
 
-            ORDEN DIRECTA REQUERIDA:
-            1. Decide: COMPRA, VENTA o ESPERAR.
-            2. Si es OPERAR, dame:
-               - Punto de entrada exacto.
-               - Volumen en LOTES (basado en el riesgo y un SL técnico).
-               - Stop Loss (SL) y Take Profit (TP) como precios exactos.
-            3. Si es ESPERAR, dame el precio para una orden PENDIENTE (Buy/Sell Limit).
-            Sé extremadamente directo y preciso.
+            RESPONDE CON ESTE FORMATO:
+            - ACCIÓN: [COMPRA / VENTA / ESPERAR]
+            - ENTRADA: [Precio]
+            - LOTES: [Cálculo exacto]
+            - STOP LOSS: [Precio]
+            - TAKE PROFIT: [Precio]
+            - MOTIVO: [Breve frase técnica]
             """
             
             try:
                 resp = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=[{"role": "system", "content": "Eres un ejecutor de señales de trading. No das consejos, das órdenes exactas."},
+                    messages=[{"role": "system", "content": "Solo das órdenes directas de trading basadas en datos técnicos."},
                               {"role": "user", "content": prompt}]
-                )
-                st.markdown("### 📋 ORDEN DE OPERACIÓN")
+            )
                 st.info(resp.choices[0].message.content)
             except Exception as e:
-                st.error(f"Error en la IA: {e}")
-
+                st.error(f"Error IA: {e}")
 else:
-    st.error("No se han podido cargar los datos. Verifica el mercado o el activo seleccionado.")
+    st.warning("Mercado cerrado o sin datos. Prueba con el Oro.")
