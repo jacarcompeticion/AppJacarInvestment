@@ -1,9 +1,4 @@
-Ese error ocurre porque, a veces, la IA responde algo como "85% (Alta)" o simplemente "N/A" en el campo de probabilidad, y la función int() no sabe cómo convertir ese texto en un número para la barra de progreso.
 
-He blindado esa línea de código para que extraiga solo los números de la respuesta de la IA y, si no encuentra ninguno, asigne un 50% por defecto. También he añadido la alerta visual especial (un borde dorado y destellos) para cuando la probabilidad supere el 85%.
-
-📋 Código Jacar Pro V9 (Final con Filtro Numérico y Alertas VIP)
-Python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
