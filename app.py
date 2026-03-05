@@ -47,25 +47,36 @@ if not df.empty:
     col2.metric("Máximo Reciente", f"{high_recent:.4f}")
     col3.metric("Mínimo Reciente", f"{low_recent:.4f}")
 
-    # 5. Gráfico de Velas Japonesas Profesional
+    # 5. Gráfico de Velas Japonesas con Auto-Ajuste de Escala
     fig = go.Figure(data=[go.Candlestick(
         x=df.index,
         open=df['Open'], 
         high=df['High'],
         low=df['Low'], 
         close=df['Close'],
-        name="Precio"
+        name="Precio",
+        increasing_line_color='#00ff00', # Verde neón
+        decreasing_line_color='#ff0000'  # Rojo neón
     )])
     
+    # Forzamos a que el eje Y se ajuste solo al precio actual (Zoom automático)
     fig.update_layout(
         title=f"Gráfico de Velas - {seleccion} (15 min)",
         xaxis_rangeslider_visible=False, 
         template="plotly_dark",
-        height=500,
-        margin=dict(l=10, r=10, t=40, b=10)
+        height=600,
+        margin=dict(l=50, r=50, t=50, b=50),
+        yaxis=dict(
+            autorange=True,      # <--- Esto fuerza el zoom al precio
+            fixedrange=False,    # Permite que tú muevas el gráfico arriba/abajo
+            side="right",        # El precio a la derecha, como en MetaTrader
+            tickformat=".4f"     # Muestra 4 decimales en el eje
+        ),
+        xaxis=dict(type='date')
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Este comando es vital para que se renderice en Streamlit
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
 
     # 6. Lógica de la IA Ejecutora
     if st.button("🚀 OBTENER ORDEN DE MERCADO DIRECTA"):
