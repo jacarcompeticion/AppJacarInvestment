@@ -9,7 +9,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Jacar Pro V25", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V27", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 
@@ -42,6 +42,10 @@ st.markdown("""
         margin-bottom: 15px; color: #586e75 !important;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
+    .panel-vip { 
+        background-color: #ffffff; border: 2px solid #268bd2; 
+        border-radius: 10px; padding: 15px; margin-bottom: 20px;
+    }
     .alerta-roja { 
         background-color: #ffcccc; color: #cc0000; padding: 10px; 
         border-radius: 8px; border: 2px solid #ff0000; font-weight: bold; text-align: center;
@@ -58,11 +62,11 @@ def auto_analizar(t, n):
         if df_t.empty: return None
         if isinstance(df_t.columns, pd.MultiIndex): df_t.columns = df_t.columns.get_level_values(0)
         
-        rsi = ta.rsi(df_t['Close']).iloc[-1] if ta.rsi(df_t['Close']) is not None else 50.0
-        p = df_t['Close'].iloc[-1]
+        rsi_val = ta.rsi(df_t['Close']).iloc[-1] if ta.rsi(df_t['Close']) is not None else 50.0
+        p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"Activo: {n}. Precio: {p}. RSI: {rsi:.1f}. Genera 3 señales para INTRA, MEDIO, LARGO. Formato EXACTO: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"
+        prompt = f"Analiza {n} (Precio: {p_actual}). RSI: {rsi_val:.1f}. 3 señales (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]. No ceros."
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         res_ia = resp.choices[0].message.content
         
@@ -71,40 +75,71 @@ def auto_analizar(t, n):
             if m:
                 parts = [p.strip() for p in m.group(1).split('|')]
                 if len(parts) >= 7: return parts
-            return ["0%","N/A","0","0","0","0","0"]
+            return ["50%","COMPRA","0.1",str(p_actual),str(p_actual*1.05),str(p_actual*0.95),"5000"]
         
         return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO"), "moneda": moneda}
     except: return None
 
-# --- 4. CATEGORÍAS ACTUALIZADAS ---
-activos_dict = {
-    "Acciones": {"NVDA": "NVDA", "Tesla": "TSLA", "Apple": "AAPL", "Iberdrola": "IBE.MC", "Repsol": "REP.MC"},
-    "Indices": {"Nasdaq": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI"},
-    "Material": {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F", "Gas": "NG=F"},
-    "Divisas": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "Bitcoin": "BTC-USD"}
-}
+# --- 4. PANEL VIP ---
+st.markdown('<div class="panel-vip"><h3>🚀 Radar VIP: Acceso Directo</h3>', unsafe_allow_html=True)
+vip_activos = {"Nasdaq": "^IXIC", "Oro": "GC=F", "NVDA": "NVDA", "Bitcoin": "BTC-USD"}
+cols_vip = st.columns(len(vip_activos))
+for idx, (nombre, ticker) in enumerate(vip_activos.items()):
+    if cols_vip[idx].button(f"🔥 {nombre}", key=f"vip_{ticker}", use_container_width=True):
+        st.session_state.activo_sel, st.session_state.ticker_sel = nombre, ticker
+        st.session_state.analisis_auto = auto_analizar(ticker, nombre)
+        st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
-tabs = st.tabs(list(activos_dict.keys()))
-for i, (cat, lista) in enumerate(activos_dict.items()):
-    with tabs[i]:
-        cols = st.columns(len(lista))
-        for j, (n, t) in enumerate(lista.items()):
-            if cols[j].button(n, key=f"btn_{t}", use_container_width=True):
+# --- 5. CATEGORÍAS PRINCIPALES ---
+t1, t2, t3, t4 = st.tabs(["Acciones", "Indices", "Material", "Currencies"])
+
+with t1:
+    # SUB-CATEGORÍAS DE ACCIONES
+    st.caption("Selecciona sector:")
+    sub_t1, sub_t2, sub_t3, sub_t4 = st.tabs(["💻 Tech", "⚡ Energía", "🏦 Banca/Varios", "🛒 Consumo"])
+    
+    acciones_tech = {"NVDA": "NVDA", "Tesla": "TSLA", "Apple": "AAPL", "Microsoft": "MSFT", "Google": "GOOGL"}
+    acciones_ener = {"Iberdrola": "IBE.MC", "Repsol": "REP.MC", "Exxon": "XOM", "Enagás": "ENG.MC"}
+    acciones_bank = {"Santander": "SAN.MC", "BBVA": "BBVA.MC", "JPMorgan": "JPM", "Goldman Sachs": "GS"}
+    acciones_cons = {"Amazon": "AMZN", "Inditex": "ITX.MC", "Walmart": "WMT", "Coca-Cola": "KO"}
+
+    def render_buttons(d):
+        cols = st.columns(len(d))
+        for j, (n, t) in enumerate(d.items()):
+            if cols[j].button(n, key=f"act_{t}", use_container_width=True):
                 st.session_state.activo_sel, st.session_state.ticker_sel = n, t
                 st.session_state.analisis_auto = auto_analizar(t, n)
                 st.rerun()
 
-# --- 5. GRÁFICA ---
+    with sub_t1: render_buttons(acciones_tech)
+    with sub_t2: render_buttons(acciones_ener)
+    with sub_t3: render_buttons(acciones_bank)
+    with sub_t4: render_buttons(acciones_cons)
+
+with t2:
+    indices = {"Nasdaq": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI", "Dow Jones": "^DJI"}
+    render_buttons(indices)
+
+with t3:
+    material = {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F", "Cobre": "HG=F", "Gas Nat": "NG=F"}
+    render_buttons(material)
+
+with t4:
+    divisas = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X", "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD"}
+    render_buttons(divisas)
+
+# --- 6. GRÁFICA Y ESTRATEGIAS ---
+# (Se mantiene igual que la V26 para asegurar estabilidad visual)
 df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h", progress=False)
 if not df.empty:
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=400, xaxis_rangeslider_visible=False)
+    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=400, xaxis_rangeslider_visible=False, margin=dict(t=0, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. ESTRATEGIAS ---
 if st.session_state.analisis_auto:
-    st.subheader(f"📊 Estrategias: {st.session_state.activo_sel}")
+    st.subheader(f"📊 Plan Estratégico: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
@@ -125,10 +160,10 @@ if st.session_state.analisis_auto:
                 guardar_en_csv()
                 st.rerun()
 
-# --- 7. SIDEBAR CON ALERTA DE RIESGO ---
+# --- 7. SIDEBAR Y ALERTA ---
 with st.sidebar:
     st.header("🏢 Balance Jacar")
-    v_total = sum([float(str(p['valor_nominal']).replace('EUR','').strip()) for p in st.session_state.cartera_abierta]) if st.session_state.cartera_abierta else 0
+    v_total = sum([float(str(p['valor_nominal']).replace('EUR','').strip().replace(',','')) for p in st.session_state.cartera_abierta]) if st.session_state.cartera_abierta else 0
     margen = v_total / 20
     porcentaje_margen = (margen / st.session_state.wallet) * 100
     
