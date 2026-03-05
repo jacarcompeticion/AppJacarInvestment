@@ -7,17 +7,14 @@ from plotly.subplots import make_subplots
 from openai import OpenAI
 from datetime import datetime
 
-# 1. INICIO Y ESTADO DE SESIÓN
+# 1. CONFIGURACIÓN E INICIO
 st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
 
-if 'wallet' not in st.session_state:
-    st.session_state.wallet = 18000.0
-if 'historial' not in st.session_state:
-    st.session_state.historial = []
-if 'ultima_orden' not in st.session_state:
-    st.session_state.ultima_orden = None
-if 'trade_coords' not in st.session_state:
-    st.session_state.trade_coords = None
+# Inicializar estados de memoria
+if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
+if 'historial' not in st.session_state: st.session_state.historial = []
+if 'señal_actual' not in st.session_state: st.session_state.señal_actual = None
+if 'posicion_abierta' not in st.session_state: st.session_state.posicion_abierta = None
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
@@ -33,116 +30,125 @@ with st.sidebar:
     seleccion = st.selectbox("Activo", list(activos.keys()))
 
 # 3. DATOS E INDICADORES
-ajuste_temp = {"1m": "1d", "5m": "5d", "15m": "5d", "1h": "1mo", "1d": "max"}
-df = yf.download(activos[seleccion], period=ajuste_temp.get(tf_visual, "5d"), interval=tf_visual)
-
-if isinstance(df.columns, pd.MultiIndex):
-    df.columns = df.columns.get_level_values(0)
+df = yf.download(activos[seleccion], period="5d", interval=tf_visual)
+if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 df = df.dropna()
 
 if not df.empty:
-    df['EMA_20'] = ta.ema(df['Close'], length=20)
-    df['RSI'] = ta.rsi(df['Close'], length=14)
+    precio_act = float(df['Close'].iloc[-1])
     resistencia = float(df['High'].tail(40).max())
     soporte = float(df['Low'].tail(40).min())
-    precio_act = float(df['Close'].iloc[-1])
 
-  # 4. GRÁFICO CON VOLUMEN DINÁMICO (Puntos 10 y 11)
-    from plotly.subplots import make_subplots
-
-    # Creamos colores para el volumen basados en el cierre vs apertura
-    colors_vol = ['#26a69a' if row['Close'] >= row['Open'] else '#ef5350' for _, row in df.iterrows()]
-
-    # Subplots con escala independiente para el volumen
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.05, 
-                        row_heights=[0.7, 0.3]) # 70% precio, 30% volumen
-
-    # Añadir Velas
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'],
-        low=df['Low'], close=df['Close'], name="Precio"
-    ), row=1, col=1)
-
-    # Añadir Volumen con Colores
-    fig.add_trace(go.Bar(
-        x=df.index, y=df['Volume'], 
-        name="Volumen", 
-        marker_color=colors_vol,
-        opacity=0.8
-    ), row=2, col=1)
+    # 4. GRÁFICO (Simplificado para visualización)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
     
-    # Soportes y Resistencias
-    fig.add_hline(y=resistencia, line_dash="dash", line_color="cyan", opacity=0.3, row=1, col=1)
-    fig.add_hline(y=soporte, line_dash="dash", line_color="orange", opacity=0.3, row=1, col=1)
+    # Dibujar niveles de la posición abierta si existe
+    if st.session_state.posicion_abierta:
+        pos = st.session_state.posicion_abierta
+        fig.add_hline(y=pos['entrada'], line_color="white", line_dash="solid", annotation_text="ENTRADA REAL", row=1, col=1)
+        fig.add_hline(y=pos['tp'], line_color="green", line_dash="dot", row=1, col=1)
+        fig.add_hline(y=pos['sl'], line_color="red", line_dash="dot", row=1, col=1)
 
-    # Dibujar Orden de la IA si existe
-    if st.session_state.trade_coords:
-        tc = st.session_state.trade_coords
-        color_zona = "rgba(0, 255, 0, 0.15)" if "COMPRA" in tc['tipo'].upper() else "rgba(255, 0, 0, 0.15)"
-        fig.add_hrect(y0=tc['entrada'], y1=tc['tp'], fillcolor=color_zona, line_width=0, row=1, col=1)
-        fig.add_hline(y=tc['sl'], line_color="#ff5252", line_width=2, line_dash="dot", row=1, col=1)
-
-    # --- CONFIGURACIÓN DE ESCALAS (Auto-ajuste total) ---
-    fig.update_layout(
-        template="plotly_dark", 
-        height=700, 
-        xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=50, t=30, b=10),
-        showlegend=False
-    )
-
-    # Ajuste eje Y Precio (Lado derecho)
-    fig.update_yaxes(autorange=True, fixedrange=False, side="right", row=1, col=1)
-    
-    # Ajuste eje Y Volumen (Escalable y visible)
-    fig.update_yaxes(autorange=True, showgrid=False, row=2, col=1)
-
+    fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=30, b=10))
+    fig.update_yaxes(side="right", row=1, col=1)
     st.plotly_chart(fig, use_container_width=True)
 
-    # 5. BOTÓN E IA
-    if st.button("🧠 ANALIZAR Y GENERAR ORDEN"):
-        with st.spinner('Procesando...'):
-            prompt = f"Activo: {seleccion} a {precio_act}. RSI: {df['RSI'].iloc[-1]:.2f}. Res: {resistencia}, Sop: {soporte}. Formato: ACCIÓN, ENTRADA, SL, TP, LOTES, MOTIVO."
+    # 5. GENERACIÓN DE SEÑAL
+    if st.button("🧠 GENERAR ANÁLISIS"):
+        with st.spinner('IA analizando mercado...'):
+            prompt = f"""Activo: {seleccion} a {precio_act}. Res: {resistencia}, Sop: {soporte}.
+            Responde con este formato:
+            TIPO: [A MERCADO / ORDEN PENDIENTE]
+            ACCIÓN: [COMPRA / VENTA]
+            PRECIO: [Valor]
+            SL: [Valor]
+            TP: [Valor]
+            LOTES: [Valor]
+            MOTIVO: [Texto corto]"""
+            
             resp = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": "Eres un trader experto. Responde solo con los datos solicitados en formato de lista de etiquetas."}, {"role": "user", "content": prompt}]
+                messages=[{"role": "system", "content": "Eres un trader ejecutor."}, {"role": "user", "content": prompt}]
             )
-            respuesta = resp.choices[0].message.content
-            st.session_state.ultima_orden = respuesta
             
-            try:
-                # Extractor numérico
-                def get_val(tag, txt):
-                    import re
-                    linea = [l for l in txt.split('\n') if tag in l.upper()][0]
-                    num = re.findall(r"[-+]?\d*\.\d+|\d+", linea)
-                    return float(num[0]) if num else 0.0
+            res = resp.choices[0].message.content
+            # Extracción de datos para la sesión
+            import re
+            def extraer(tag):
+                try: return re.findall(rf"{tag}: (.+)", res)[0]
+                except: return "0"
+            
+            st.session_state.señal_actual = {
+                "texto": res,
+                "entrada": float(re.findall(r"PRECIO: ([\d\.]+)", res)[0]),
+                "sl": float(re.findall(r"SL: ([\d\.]+)", res)[0]),
+                "tp": float(re.findall(r"TP: ([\d\.]+)", res)[0]),
+                "lotes": float(re.findall(r"LOTES: ([\d\.]+)", res)[0]),
+                "tipo": extraer("ACCIÓN")
+            }
+            st.rerun()
 
-                st.session_state.trade_coords = {
-                    "entrada": get_val("ENTRADA", respuesta),
-                    "sl": get_val("SL", respuesta),
-                    "tp": get_val("TP", respuesta),
-                    "tipo": "COMPRA" if "COMPRA" in respuesta.upper() else "VENTA"
-                }
+    # --- FLUJO DE TRABAJO (PASOS 1, 2, 3) ---
+    
+    # PASO 1: SEÑAL RECIBIDA
+    if st.session_state.señal_actual and not st.session_state.posicion_abierta:
+        st.info("### 📡 Nueva Señal Detectada")
+        st.code(st.session_state.señal_actual['texto'])
+        col1, col2 = st.columns(2)
+        if col1.button("✅ ACEPTAR E INDICAR APERTURA"):
+            # Pasamos a posición abierta con los datos de la IA por defecto
+            st.session_state.posicion_abierta = {
+                "activo": seleccion,
+                "entrada": st.session_state.señal_actual['entrada'],
+                "lotes": st.session_state.señal_actual['lotes'],
+                "sl": st.session_state.señal_actual['sl'],
+                "tp": st.session_state.señal_actual['tp'],
+                "tipo": st.session_state.señal_actual['tipo']
+            }
+            st.session_state.señal_actual = None
+            st.rerun()
+        if col2.button("❌ RECHAZAR"):
+            st.session_state.señal_actual = None
+            st.rerun()
+
+    # PASO 2: POSICIÓN ABIERTA (Edición)
+    if st.session_state.posicion_abierta:
+        st.success(f"### 🔓 POSICIÓN ABIERTA: {st.session_state.posicion_abierta['activo']}")
+        with st.container(border=True):
+            c1, c2, c3 = st.columns(3)
+            # El usuario puede modificar los valores que vinieron por defecto
+            st.session_state.posicion_abierta['entrada'] = c1.number_input("Precio Entrada Real", value=st.session_state.posicion_abierta['entrada'], format="%.4f")
+            st.session_state.posicion_abierta['lotes'] = c2.number_input("Volumen (Lotes)", value=st.session_state.posicion_abierta['lotes'])
+            
+            # PASO 3: CIERRE
+            st.divider()
+            st.write("#### Finalizar Operación")
+            cc1, cc2 = st.columns(2)
+            precio_cierre = cc1.number_input("Precio de Salida / Cierre", value=precio_act, format="%.4f")
+            
+            if cc2.button("🏁 CERRAR Y CALCULAR RESULTADO"):
+                # Cálculo simple de PnL (para Oro/Forex/Nasdaq varía, aquí usamos una base estándar)
+                tipo = 1 if "COMPRA" in st.session_state.posicion_abierta['tipo'].upper() else -1
+                pips = (precio_cierre - st.session_state.posicion_abierta['entrada']) * tipo
+                # Multiplicador genérico (ajustar según activo)
+                resultado_final = pips * st.session_state.posicion_abierta['lotes'] * 1000 
+                
+                # Guardar en historial
+                st.session_state.wallet += resultado_final
+                st.session_state.historial.append({
+                    "Fecha": datetime.now().strftime("%d/%m %H:%M"),
+                    "Activo": st.session_state.posicion_abierta['activo'],
+                    "Entrada": st.session_state.posicion_abierta['entrada'],
+                    "Salida": precio_cierre,
+                    "Resultado": round(resultado_final, 2)
+                })
+                st.session_state.posicion_abierta = None
+                st.balloons()
                 st.rerun()
-            except:
-                st.session_state.trade_coords = None
 
-    # 6. REGISTRO Y RESULTADOS
-    if st.session_state.ultima_orden:
-        st.info(st.session_state.ultima_orden)
-        with st.expander("📝 REGISTRAR OPERACIÓN", expanded=True):
-            col_r1, col_r2 = st.columns(2)
-            pnl = col_r1.number_input("Resultado Final ($)", value=0.0)
-            if col_r2.button("💾 Guardar y Actualizar"):
-                st.session_state.wallet += pnl
-                st.session_state.historial.append({"Fecha": datetime.now().strftime("%H:%M"), "Activo": seleccion, "PnL": pnl})
-                st.session_state.ultima_orden = None
-                st.session_state.trade_coords = None
-                st.rerun()
-
+    # HISTORIAL FINAL
     if st.session_state.historial:
         st.divider()
-        st.subheader("📊 Historial Reciente")
-        st.table(pd.DataFrame(st.session_state.historial).tail(5))
+        st.subheader("📊 Resumen de Operaciones")
+        st.table(pd.DataFrame(st.session_state.historial).tail(10))
