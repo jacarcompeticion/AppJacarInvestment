@@ -6,13 +6,22 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from openai import OpenAI
 from datetime import datetime
+import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V48", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V49", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
+
+def limpiar_numero(valor):
+    """Limpia strings con formatos extraños (comas, símbolos) para convertirlos a float."""
+    if isinstance(valor, (int, float)): return float(valor)
+    # Solo dejamos dígitos y el punto decimal
+    clean = re.sub(r'[^\d.]', '', str(valor).replace(',', '.'))
+    try: return float(clean) if clean else 0.0
+    except: return 0.0
 
 def guardar_datos(lista, archivo):
     if lista: pd.DataFrame(lista).to_csv(archivo, index=False)
@@ -22,9 +31,7 @@ def guardar_datos(lista, archivo):
 
 def cargar_datos(archivo):
     if os.path.exists(archivo):
-        try: 
-            df = pd.read_csv(archivo)
-            return df.to_dict('records')
+        try: return pd.read_csv(archivo).to_dict('records')
         except: return []
     return []
 
@@ -36,12 +43,11 @@ if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = Non
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. MOTOR DE CÁLCULO (CON CONVERSIÓN DE TIPOS) ---
+# --- 2. CÁLCULOS DE CUENTA ---
 def calcular_metricas():
     nominal_total = 0
     for p in st.session_state.cartera_abierta:
-        try: nominal_total += float(p.get('valor_nominal', 0))
-        except: pass
+        nominal_total += limpiar_numero(p.get('valor_nominal', 0))
     
     margen_usado = nominal_total * 0.05
     margen_disponible = float(st.session_state.wallet) - margen_usado
@@ -49,10 +55,9 @@ def calcular_metricas():
     win_rate = 50.0
     if st.session_state.historial:
         try:
-            ganadas = len([h for h in st.session_state.historial if float(h['pnl']) > 0])
+            ganadas = len([h for h in st.session_state.historial if limpiar_numero(h['pnl']) > 0])
             win_rate = (ganadas / len(st.session_state.historial)) * 100
         except: pass
-    
     return margen_usado, margen_disponible, win_rate
 
 m_usado, m_disponible, wr_actual = calcular_metricas()
@@ -71,42 +76,44 @@ def auto_analizar(t, n):
     try:
         df_t = obtener_datos(t, "5d", "15m")
         if df_t.empty: return None
-        p_actual = float(df_t['Close'].iloc[-1])
+        p_act = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"""Analiza {n} a {p_actual}. 
-        Responde estrictamente en este formato de 3 líneas (una para cada TAG):
-        TAG: [X]% Probabilidad | ACCION | Lotes | Entrada | Take Profit | Stop Loss | Nominal
-        Genera 3 líneas: una que empiece por INTRA, otra por MEDIO y otra por LARGO."""
+        prompt = f"""Analiza {n} a {p_act}. 
+        Formato ESTRICTO (3 lineas):
+        TAG: [Probabilidad]% | ACCION | Lotes | Entrada | Take Profit | Stop Loss | Nominal"""
         
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0)
-        res_ia = resp.choices[0].message.content
+        lineas = resp.choices[0].message.content.split('\n')
         
-        def extraer(tag):
-            for line in res_ia.split('\n'):
+        data_final = {"moneda": moneda, "p_actual": p_act}
+        tags = ["INTRA", "MEDIO", "LARGO"]
+        
+        for tag in tags:
+            encontrado = False
+            for line in lineas:
                 if tag in line.upper():
                     parts = line.replace('*','').replace('[','').replace(']','').split(':')[-1].split('|')
-                    if len(parts) >= 7: return [p.strip() for p in parts]
-            return ["50%", "ESPERAR", "0.10", str(p_actual), "0", "0", "0"]
-
-        return {"intra": extraer("INTRA"), "medio": extraer("MEDIO"), "largo": extraer("LARGO"), "moneda": moneda, "p_actual": p_actual}
+                    if len(parts) >= 7:
+                        data_final[tag.lower()] = [p.strip() for p in parts]
+                        encontrado = True
+                        break
+            if not encontrado: # Fallback si la IA falla en una línea
+                data_final[tag.lower()] = ["50%", "ESPERAR", "0.10", str(p_act), "0", "0", "0"]
+        return data_final
     except: return None
 
 # --- 4. INTERFAZ: CABECERA Y CATEGORÍAS ---
-st.markdown(f"""
-    <div style="background-color:#1e212b; padding:15px; border-radius:10px; color:white; border-left: 5px solid #268bd2;">
-        <span style="font-size:1.2em;">💰 <b>Margen Disponible: {m_disponible:,.2f} €</b></span> 
-        <span style="margin-left:30px; color:#00ff00;">🎯 WinRate Histórico: {wr_actual:.1f}%</span>
-        <span style="margin-left:30px; color:#ff8c00;">⚠️ Margen Usado: {m_usado:,.2f} €</span>
-    </div>
-""", unsafe_allow_html=True)
+st.markdown(f"""<div style="background-color:#1e212b; padding:15px; border-radius:10px; color:white; border-left: 5px solid #268bd2;">
+    💰 <b>Margen Disponible: {m_disponible:,.2f} €</b> | 🎯 WinRate: {wr_actual:.1f}% | ⚠️ Usado: {m_usado:,.2f} €
+</div>""", unsafe_allow_html=True)
 
 t_main = st.tabs(["📈 Stocks", "📊 Indices", "🏗️ Material", "💱 Divisas"])
 
-def grid(d, prefix=""):
+def grid(d, pref=""):
     cols = st.columns(4)
     for i, (n, t) in enumerate(d.items()):
-        if cols[i % 4].button(n, key=f"btn_{prefix}_{t}", use_container_width=True):
+        if cols[i % 4].button(n, key=f"{pref}_{t}", use_container_width=True):
             st.session_state.activo_sel, st.session_state.ticker_sel = n, t
             st.session_state.analisis_auto = auto_analizar(t, n)
             st.rerun()
@@ -128,7 +135,7 @@ with t_main[1]: # INDICES
 with t_main[2]: # MATERIAL
     grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat")
 
-with t_main[3]: # DIVISAS
+with t_main[3]: # DIVISAS (Divisas)
     grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD"}, "div")
 
 # --- 5. GRÁFICO ---
@@ -151,7 +158,7 @@ if not df.empty:
     fig.update_layout(height=450, xaxis_rangeslider_visible=False, template="plotly_white", margin=dict(t=5,b=5))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. PLAN ESTRATÉGICO (CON % PROBABILIDAD Y LABELS COMPLETOS) ---
+# --- 6. ESTRATEGIAS ---
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     res = st.session_state.analisis_auto
@@ -160,24 +167,22 @@ if st.session_state.analisis_auto:
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
         es_compra = "COMPRA" in s[1].upper()
-        bg_color = "#e8f5e9" if es_compra else "#ffebee"
-        b_color = "#4caf50" if es_compra else "#f44336"
+        bg, b_col = ("#e8f5e9", "#4caf50") if es_compra else ("#ffebee", "#f44336")
 
         with cols_ia[i]:
-            st.markdown(f"""
-                <div style="background-color:{bg_color}; padding:15px; border-radius:12px; border:2px solid {b_color}; min-height:220px;">
-                    <h4 style="margin:0;">{tag.upper()} <span style="float:right; color:#1a73e8;">🎯 {s[0]}</span></h4>
-                    <p style="text-align:center; font-weight:bold; font-size:1.3em; color:#333; margin:12px 0;">{s[1]}</p>
-                    <p style="font-size:0.95em; margin:2px;">Entrada: <b>{s[3]}</b> | Lotes: <b>{s[2]}</b></p>
-                    <p style="font-size:0.95em; margin:2px; color:#2e7d32;"><b>Take Profit:</b> {s[4]}</p>
-                    <p style="font-size:0.95em; margin:2px; color:#c62828;"><b>Stop Loss:</b> {s[5]}</p>
-                    <p style="font-size:0.8em; color:grey; margin-top:8px;">Riesgo Máx Sugerido: {(wr_actual/100)*2:.1f}%</p>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="background-color:{bg}; padding:15px; border-radius:12px; border:2px solid {b_col}; min-height:220px;">
+                <h4 style="margin:0;">{tag.upper()} <span style="float:right; color:#1a73e8;">🎯 {s[0]}</span></h4>
+                <p style="text-align:center; font-weight:bold; font-size:1.3em; color:#333; margin:12px 0;">{s[1]}</p>
+                <p style="margin:2px;">Entrada: <b>{s[3]}</b> | Lotes: <b>{s[2]}</b></p>
+                <p style="margin:2px; color:#2e7d32;"><b>Take Profit:</b> {s[4]}</p>
+                <p style="margin:2px; color:#c62828;"><b>Stop Loss:</b> {s[5]}</p>
+                <p style="font-size:0.8em; color:grey; margin-top:8px;">Riesgo Máx: {(wr_actual/100)*2:.1f}%</p>
+            </div>""", unsafe_allow_html=True)
             
             with st.popover(f"🚀 Ejecutar {tag.upper()}", use_container_width=True):
-                l_f = st.number_input("Lotes", value=float(s[2]), step=0.01, key=f"l_{tag}")
-                p_f = st.number_input("Entrada", value=float(s[3]), key=f"p_{tag}")
+                # Limpiamos los valores antes de pasarlos al input para evitar ValueError
+                l_f = st.number_input("Lotes", value=limpiar_numero(s[2]), step=0.01, key=f"l_{tag}")
+                p_f = st.number_input("Entrada", value=limpiar_numero(s[3]), key=f"p_{tag}")
                 if st.button("Confirmar", key=f"conf_{tag}", use_container_width=True):
                     st.session_state.cartera_abierta.append({
                         "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
@@ -186,37 +191,29 @@ if st.session_state.analisis_auto:
                     })
                     guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
 
-# --- 7. SIDEBAR: TERMINAL ---
+# --- 7. SIDEBAR ---
 with st.sidebar:
     st.header("🏢 Terminal Jacar")
     st.metric("Balance Equity", f"{st.session_state.wallet:,.2f} €")
     st.divider()
-    
     tab_side = st.tabs(["💼 Abiertas", "📜 Histórico"])
     with tab_side[0]:
         pnl_total_curso = 0
         for i, pos in enumerate(list(st.session_state.cartera_abierta)):
             with st.expander(f"📌 {pos['activo']} ({pos['lotes']} L)"):
-                # Aseguramos conversión a float para evitar el TypeError
-                ent_val = float(pos['entrada'])
-                lot_val = float(pos['lotes'])
-                
-                p_cierre_real = st.number_input("Precio Cierre", value=ent_val, key=f"out_{pos['id']}")
-                
+                ent_v = limpiar_numero(pos['entrada'])
+                lot_v = limpiar_numero(pos['lotes'])
+                p_out = st.number_input("Precio Cierre", value=ent_v, key=f"out_{pos['id']}")
                 es_buy = "COMPRA" in str(pos['tipo']).upper()
-                # El multiplicador 100 es un estándar para CFDs/Futuros, ajústalo si es necesario
-                pnl_op = (p_cierre_real - ent_val) * lot_val * 100 if es_buy else (ent_val - p_cierre_real) * lot_val * 100
+                pnl_op = (p_out - ent_v) * lot_v * 100 if es_buy else (ent_v - p_out) * lot_v * 100
                 pnl_total_curso += pnl_op
-                
-                st.write(f"PnL: **{pnl_op:,.2f} {pos.get('moneda', '€')}**")
+                st.write(f"PnL: **{pnl_op:,.2f} €**")
                 if st.button("Cerrar", key=f"close_{pos['id']}", use_container_width=True):
                     st.session_state.historial.append({"fecha": datetime.now().strftime("%d/%m %H:%M"), "activo": pos['activo'], "pnl": pnl_op})
                     st.session_state.wallet = float(st.session_state.wallet) + pnl_op
                     st.session_state.cartera_abierta.pop(i)
-                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE); guardar_datos(st.session_state.historial, HIST_FILE)
-                    st.rerun()
+                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE); guardar_datos(st.session_state.historial, HIST_FILE); st.rerun()
         st.markdown(f"**PnL en Curso:** `{pnl_total_curso:,.2f} €`")
-
     with tab_side[1]:
         if st.session_state.historial:
             st.dataframe(pd.DataFrame(st.session_state.historial).iloc[::-1], hide_index=True)
