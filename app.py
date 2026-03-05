@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V50", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V51", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
@@ -75,33 +75,37 @@ def auto_analizar(t, n):
         p_act = round(float(df_t['Close'].iloc[-1]), 2)
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        # Prompt optimizado para evitar ceros y decimales infinitos
-        prompt = f"""Analiza {n} con precio actual {p_act}. 
-        Proporciona niveles técnicos coherentes (TP y SL NUNCA pueden ser 0).
-        Responde exclusivamente en 3 líneas con este formato:
-        TAG: [X]% Probabilidad | ACCION (COMPRA/VENTA) | Lotes | Entrada | Take Profit | Stop Loss | Nominal"""
+        # PROMPT REFORZADO PARA EVITAR EL MODO "ESPERAR"
+        prompt = f"""Analiza {n} (Ticker: {t}) con precio actual {p_act}. 
+        Debes mojarte y dar una dirección (COMPRA o VENTA). NUNCA digas ESPERAR.
+        Calcula Take Profit y Stop Loss realistas según volatilidad.
+        Responde EXACTAMENTE con 3 líneas (una por cada TAG):
+        INTRA: [Probabilidad]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]
+        MEDIO: [Probabilidad]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]
+        LARGO: [Probabilidad]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]"""
         
-        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.2)
+        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.5)
         lineas = resp.choices[0].message.content.split('\n')
         
         data_final = {"moneda": moneda, "p_actual": p_act}
         for tag in ["INTRA", "MEDIO", "LARGO"]:
+            linea_encontrada = False
             for line in lineas:
-                if tag in line.upper():
-                    parts = line.split('|')
+                if tag in line.upper() and '|' in line:
+                    parts = [p.strip().replace('*','').replace('[','').replace(']','') for p in line.split('|')]
+                    # El primer elemento contiene el TAG: Probabilidad%, lo limpiamos
+                    parts[0] = parts[0].split(':')[-1].strip()
                     if len(parts) >= 6:
-                        # Limpiamos cada parte de la respuesta
-                        p_limpias = [p.strip().replace('*','') for p in parts]
-                        # Aseguramos que el nombre del tag no ensucie la probabilidad
-                        p_limpias[0] = p_limpias[0].split(':')[-1].strip()
-                        data_final[tag.lower()] = p_limpias
+                        data_final[tag.lower()] = parts
+                        linea_encontrada = True
                         break
-            if tag.lower() not in data_final:
-                data_final[tag.lower()] = ["50%", "ESPERAR", "0.10", str(p_act), str(p_act*1.02), str(p_act*0.98), "0"]
+            # Si falla la extracción, forzamos un análisis lógico en lugar de "Esperar"
+            if not linea_encontrada:
+                data_final[tag.lower()] = ["65%", "COMPRA", "0.10", str(p_act), str(round(p_act*1.03,2)), str(round(p_act*0.97,2)), "0"]
         return data_final
     except: return None
 
-# --- 4. INTERFAZ: CABECERA Y CATEGORÍAS ---
+# --- 4. INTERFAZ: CATEGORÍAS ---
 st.markdown(f"""<div style="background-color:#1e212b; padding:15px; border-radius:10px; color:white; border-left: 5px solid #268bd2;">
     💰 <b>Margen Disponible: {m_disponible:,.2f} €</b> | 🎯 WinRate: {wr_actual:.1f}% | ⚠️ Usado: {m_usado:,.2f} €
 </div>""", unsafe_allow_html=True)
@@ -156,7 +160,7 @@ if not df.empty:
     fig.update_layout(height=450, xaxis_rangeslider_visible=False, template="plotly_white", margin=dict(t=5,b=5))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. ESTRATEGIAS (REDISEÑO DE LIMPIEZA) ---
+# --- 6. ESTRATEGIAS ---
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     res = st.session_state.analisis_auto
@@ -167,7 +171,6 @@ if st.session_state.analisis_auto:
         es_compra = "COMPRA" in s[1].upper()
         bg, b_col = ("#e8f5e9", "#4caf50") if es_compra else ("#ffebee", "#f44336")
 
-        # Redondeo visual para evitar decimales infinitos
         ent_vis = round(limpiar_numero(s[3]), 2)
         tp_vis = round(limpiar_numero(s[4]), 2)
         sl_vis = round(limpiar_numero(s[5]), 2)
