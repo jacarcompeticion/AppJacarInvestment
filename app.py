@@ -30,20 +30,36 @@ with st.sidebar:
     activos = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
     seleccion = st.selectbox("Activo a analizar", list(activos.keys()))
 
-# 3. OBTENCIÓN Y ANÁLISIS DE DATOS (Puntos 2, 6, 7)
+# 3. OBTENCIÓN Y ANÁLISIS DE DATOS (Puntos 2, 6, 7 corregidos)
 ticker = activos[seleccion]
-df = yf.download(ticker, period="5d", interval=tf_visual)
-if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+
+# Lógica de ajuste automático de temporalidad
+ajuste_temporal = {
+    "1m": "1d",    # Si quieres velas de 1m, bajamos solo 1 día
+    "5m": "5d",    # Si quieres velas de 5m, bajamos 5 días
+    "15m": "5d",
+    "1h": "1mo",   # Si quieres velas de 1h, bajamos 1 mes
+    "1d": "max"    # Si quieres velas diarias, bajamos todo el historial
+}
+
+periodo_ajustado = ajuste_temporal.get(tf_visual, "5d")
+
+# Descarga con el ajuste dinámico
+df = yf.download(ticker, period=periodo_ajustado, interval=tf_visual)
+
+if isinstance(df.columns, pd.MultiIndex): 
+    df.columns = df.columns.get_level_values(0)
+
 df = df.dropna()
 
 if not df.empty:
-    # Indicadores Técnicos (Punto 2)
+    # Recalcular indicadores con los nuevos datos
     df['EMA_20'] = ta.ema(df['Close'], length=20)
     df['RSI'] = ta.rsi(df['Close'], length=14)
     
-    # Cálculo de Soportes/Resistencias (Punto 7)
-    resistencia = float(df['High'].tail(30).max())
-    soporte = float(df['Low'].tail(30).min())
+    # Soportes y resistencias basados en la temporalidad visible
+    resistencia = float(df['High'].tail(40).max())
+    soporte = float(df['Low'].tail(40).min())
     precio_act = float(df['Close'].iloc[-1])
 
     # 4. PANEL DE OPORTUNIDADES (Punto 1)
@@ -54,16 +70,19 @@ if not df.empty:
     c3.metric("Resistencia", f"{resistencia:.4f}")
     c4.metric("Soporte", f"{soporte:.4f}")
 
-    # 5. GRÁFICO PROFESIONAL (Punto 11)
-    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Velas")])
-    
-    # Dibujar líneas de Soporte/Resistencia (Punto 11)
-    fig.add_hline(y=resistencia, line_dash="dash", line_color="cyan", opacity=0.3, annotation_text="Resistencia H1")
-    fig.add_hline(y=soporte, line_dash="dash", line_color="orange", opacity=0.3, annotation_text="Soporte H1")
-    
-    fig.update_layout(template="plotly_dark", height=500, yaxis=dict(autorange=True, side="right", gridcolor='gray'), xaxis_rangeslider_visible=False)
-    st.plotly_chart(fig, use_container_width=True)
-
+  # 5. GRÁFICO PROFESIONAL (Busca esta sección en tu app.py)
+    fig.update_layout(
+        template="plotly_dark", 
+        height=600, # He subido un poco la altura para que se vea mejor
+        xaxis_rangeslider_visible=False,
+        yaxis=dict(
+            autorange=True,      # <--- ESTE ES EL TRUCO: Auto-zoom al precio
+            fixedrange=False,     # Permite que tú muevas el eje Y con el ratón
+            side="right", 
+            gridcolor='rgba(255,255,255,0.1)'
+        ),
+        margin=dict(l=10, r=50, t=30, b=20)
+    )
     # 6. GENERACIÓN DE ORDEN Y REGISTRO (Puntos 3, 4)
     if st.button("🧠 ANALIZAR Y GENERAR ORDEN"):
         with st.spinner('IA Calculando rangos basándose en contexto geopolítico y técnico...'):
