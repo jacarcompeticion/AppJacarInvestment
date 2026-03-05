@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V42", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V43", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
@@ -33,7 +33,7 @@ if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = Non
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. MOTOR DE DATOS ---
+# --- 2. MOTOR DE DATOS Y ANÁLISIS ---
 @st.cache_data(ttl=60)
 def obtener_datos(ticker, periodo, intervalo):
     try:
@@ -51,21 +51,31 @@ def auto_analizar(t, n):
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"Activo:{n} Precio:{p_actual} RSI:{rsi_val:.1f}. Genera 3 planes: INTRA, MEDIO, LARGO. Formato estricto: TAG: Prob% | Accion | Lotes | Entrada | TP | SL | Nominal"
+        # Prompt ultra-específico para evitar errores de formato
+        prompt = f"""Analiza {n} a {p_actual}. RSI: {rsi_val:.1f}.
+        Responde exclusivamente con este formato para 3 estrategias (INTRA, MEDIO, LARGO):
+        INTRA: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
+        MEDIO: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
+        LARGO: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
+        Usa '|' como separador único."""
+        
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0)
         res_ia = resp.choices[0].message.content
         
-        def extraer(tag):
+        def extraer_limpio(tag):
             for line in res_ia.split('\n'):
                 if tag in line.upper():
-                    data = line.split(':')[-1].replace('[','').replace(']','').split('|')
-                    if len(data) >= 7: return [d.strip() for d in data]
-            return ["---","---","0","0","0","0","0"]
+                    # Quitamos asteriscos, corchetes y el nombre del TAG
+                    clean_line = line.replace('*', '').replace('[', '').replace(']', '')
+                    parts = clean_line.split(':')[-1].split('|')
+                    if len(parts) >= 7:
+                        return [p.strip() for p in parts]
+            return ["N/A", "ESPERAR", "0", "0", "0", "0", "0"]
 
-        return {"intra": extraer("INTRA"), "medio": extraer("MEDIO"), "largo": extraer("LARGO"), "moneda": moneda}
+        return {"intra": extraer_limpio("INTRA"), "medio": extraer_limpio("MEDIO"), "largo": extraer_limpio("LARGO"), "moneda": moneda}
     except: return None
 
-# --- 3. INTERFAZ: CATEGORÍAS ---
+# --- 3. INTERFAZ: CATEGORÍAS (CON PREFIJOS) ---
 st.markdown('<div style="background-color:#ffffff; padding:15px; border-radius:10px; border:2px solid #268bd2; margin-bottom:20px;"><h3>🚀 Radar VIP</h3>', unsafe_allow_html=True)
 vip = {"🏙️ US100": "NQ=F", "📀 ORO": "GC=F", "💡 NVDA": "NVDA", "₿ BTC": "BTC-USD"}
 cv = st.columns(4)
@@ -112,7 +122,7 @@ with t_main[3]: # DIVISAS
     with d1: grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X"}, "div_maj")
     with d2: grid({"₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD", "🐕 Doge":"DOGE-USD"}, "div_cry")
 
-# --- 4. GRÁFICA (EMA NARANJA) ---
+# --- 4. GRÁFICA ---
 st.divider()
 c_graf, c_sel = st.columns([8, 2])
 with c_sel:
@@ -130,22 +140,20 @@ if not df.empty:
     fig.add_hline(y=res_act, line_dash="dash", line_color="red", opacity=0.5, annotation_text="RES", row=1, col=1)
     fig.add_hline(y=sop_act, line_dash="dash", line_color="green", opacity=0.5, annotation_text="SOP", row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
-    fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False, margin=dict(t=5, b=5))
+    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
 # --- 5. PLAN ESTRATÉGICO CON COLORES DINÁMICOS ---
-
-
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
-        # Lógica de colores de fondo según la recomendación de la IA
-        es_compra = "COMPRA" in s[1].upper()
-        es_venta = "VENTA" in s[1].upper()
+        # Lógica de colores (Semáforo)
+        txt_accion = s[1].upper()
+        es_compra = "COMPRA" in txt_accion
+        es_venta = "VENTA" in txt_accion
         
         bg_color = "#e8f5e9" if es_compra else "#ffebee" if es_venta else "#ffffff"
         border_color = "#4caf50" if es_compra else "#f44336" if es_venta else "#ddd"
@@ -153,11 +161,11 @@ if st.session_state.analisis_auto:
 
         with cols_ia[i]:
             st.markdown(f"""
-                <div style="background-color:{bg_color}; padding:15px; border-radius:12px; border:2px solid {border_color}; height:190px;">
+                <div style="background-color:{bg_color}; padding:15px; border-radius:12px; border:2px solid {border_color}; min-height:190px;">
                     <h4 style="text-align:center; color:#333; margin:0; font-size:1.1em;">{tag.upper()} ({s[0]})</h4>
                     <p style="text-align:center; font-weight:bold; font-size:1.3em; color:{text_color}; margin:8px;">{s[1]}</p>
-                    <p style="margin:2px; font-size:0.9em;">📦 Lotes: <b>{s[2]}</b> | In: <b>{s[3]}</b></p>
-                    <p style="margin:2px; font-size:0.9em;">🏁 TP: <span style="color:green; font-weight:bold;">{s[4]}</span> | 🛡️ SL: <span style="color:red; font-weight:bold;">{s[5]}</span></p>
+                    <p style="margin:2px; font-size:0.9em; color:#000;">📦 Lotes: <b>{s[2]}</b> | In: <b>{s[3]}</b></p>
+                    <p style="margin:2px; font-size:0.9em; color:#000;">🏁 TP: <span style="color:green; font-weight:bold;">{s[4]}</span> | 🛡️ SL: <span style="color:red; font-weight:bold;">{s[5]}</span></p>
                     <p style="font-size:0.8em; color:grey; margin-top:5px;">Nominal: {s[6]} {res['moneda']}</p>
                 </div>
             """, unsafe_allow_html=True)
@@ -167,8 +175,7 @@ if st.session_state.analisis_auto:
                     "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], 
                     "valor_nominal": s[6], "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
                 })
-                guardar_datos(st.session_state.cartera_abierta, CSV_FILE)
-                st.rerun()
+                guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
 
 # --- 6. SIDEBAR ---
 with st.sidebar:
@@ -187,6 +194,4 @@ with st.sidebar:
         if st.session_state.historial:
             st.dataframe(pd.DataFrame(st.session_state.historial).iloc[::-1], hide_index=True)
             if st.button("Limpiar Histórico"): 
-                st.session_state.historial = []
-                guardar_datos([], HIST_FILE)
-                st.rerun()
+                st.session_state.historial = []; guardar_datos([], HIST_FILE); st.rerun()
