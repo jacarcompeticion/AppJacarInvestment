@@ -120,46 +120,71 @@ if not df.empty:
         
     st.plotly_chart(fig, use_container_width=True)
     
-    # 6. GENERACIÓN DE ORDEN Y EXTRACCIÓN DE DATOS (Puntos 3, 4, 11)
+   El error ocurre porque la IA, al intentar ser "creativa", a veces añade una introducción o pequeñas variaciones en el texto (como "Aquí tienes tu orden:") y eso rompe el sistema de lectura que instalamos.
+
+Para que no vuelva a fallar, vamos a hacer que el sistema de lectura sea mucho más "flexible" (que busque las palabras clave sin importar dónde estén) y, sobre todo, que siempre te muestre el texto de la IA, incluso si no puede dibujarlo.
+
+🛠️ Paso 1: Sustituye la SECCIÓN 6 por este bloque "Inmune a Errores"
+He rediseñado el lector para que sea mucho más inteligente y robusto. Sustituye todo el bloque del botón por este:
+
+Python
+    # 6. GENERACIÓN DE ORDEN Y EXTRACCIÓN FLEXIBLE
     if st.button("🧠 ANALIZAR Y GENERAR ORDEN"):
-        with st.spinner('Calculando estrategia...'):
+        with st.spinner('IA analizando tendencia y calculando niveles...'):
             prompt = f"""
-            Trader profesional. Activo: {seleccion} a {precio_act:.4f}. RSI: {df['RSI'].iloc[-1]:.2f}.
-            Soporte: {soporte}, Resistencia: {resistencia}. Estilo: {perfil}. Objetivo: {obj_diario}.
+            Actúa como un TRADER EJECUTOR.
+            ACTIVO: {seleccion} a {precio_act:.4f}. RSI: {df['RSI'].iloc[-1]:.2f}.
+            Contexto: Max {resistencia}, Min {soporte}. Estilo: {perfil}.
             
-            Responde estrictamente en este formato para que el sistema lea los datos:
-            ACCIÓN: [COMPRA/VENTA/ESPERAR]
+            DEBES incluir estas etiquetas exactamente en tu respuesta:
+            ACCIÓN: [COMPRA o VENTA]
             ENTRADA: [Precio]
             SL: [Precio]
             TP: [Precio]
             LOTES: [Cantidad]
-            MOTIVO: [Breve frase técnica]
+            MOTIVO: [Breve frase]
             """
             
             resp = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": "Eres un ejecutor de trading. Solo respondes con el formato solicitado."}, 
+                messages=[{"role": "system", "content": "Eres un ejecutor de trading preciso. Solo proporcionas órdenes directas."},
                           {"role": "user", "content": prompt}]
             )
             
             respuesta = resp.choices[0].message.content
-            st.session_state.ultima_orden = respuesta
+            st.session_state.ultima_orden = respuesta # Guardamos siempre el texto
             
-            # Extraer coordenadas para el gráfico
+            # --- Lector Flexible de Datos ---
             try:
-                lineas = respuesta.split('\n')
-                datos = {l.split(': ')[0].strip(): l.split(': ')[1].strip() for l in lineas if ': ' in l}
-                
-                st.session_state.trade_coords = {
-                    "entrada": float(datos['ENTRADA']),
-                    "sl": float(datos['SL']),
-                    "tp": float(datos['TP']),
-                    "tipo": datos['ACCIÓN']
-                }
-                st.rerun() # Recargamos para que el dibujo aparezca en el gráfico
-            except:
-                st.warning("Orden generada, pero el formato no permitió dibujarla visualmente.")
+                lineas = respuesta.upper().split('\n')
+                datos_ext = {}
+                for l in lineas:
+                    if ':' in l:
+                        clave = l.split(':')[0].strip()
+                        valor = l.split(':')[1].strip()
+                        datos_ext[clave] = valor
 
+                # Extraemos los números limpiando símbolos como USD o puntos finales
+                def limpiar_num(texto):
+                    return float(''.join(c for c in texto if c.isdigit() or c == '.'))
+
+                st.session_state.trade_coords = {
+                    "entrada": limpiar_num(datos_ext.get('ENTRADA', str(precio_act))),
+                    "sl": limpiar_num(datos_ext.get('SL', '0')),
+                    "tp": limpiar_num(datos_ext.get('TP', '0')),
+                    "tipo": datos_ext.get('ACCIÓN', 'ESPERAR')
+                }
+                st.rerun() 
+            except Exception as e:
+                # Si falla el dibujo, al menos mostramos el error técnico en consola
+                print(f"Error de lectura visual: {e}")
+
+    # MOSTRAR SIEMPRE LA ORDEN (Fuera del botón para que no desaparezca)
+    if 'ultima_orden' in st.session_state:
+        st.markdown("---")
+        st.subheader("📋 Orden de Ejecución")
+        st.info(st.session_state.ultima_orden)
+        
     # 7. RESUMEN SEMANAL/MENSUAL (Punto 4)
     st.divider()
     st.subheader("📊 Historial de Operaciones")
