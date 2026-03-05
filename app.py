@@ -10,67 +10,63 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Jacar Pro V23 - Storage", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V24", layout="wide", page_icon="🏦")
 
-# RUTAS DE ALMACENAMIENTO
 CSV_FILE = 'cartera_jacar.csv'
 
 def guardar_en_csv():
     if st.session_state.cartera_abierta:
-        df_save = pd.DataFrame(st.session_state.cartera_abierta)
-        df_save.to_csv(CSV_FILE, index=False)
-    else:
-        if os.path.exists(CSV_FILE): os.remove(CSV_FILE)
+        pd.DataFrame(st.session_state.cartera_abierta).to_csv(CSV_FILE, index=False)
+    elif os.path.exists(CSV_FILE): 
+        os.remove(CSV_FILE)
 
 def cargar_desde_csv():
     if os.path.exists(CSV_FILE):
-        return pd.read_csv(CSV_FILE).to_dict('records')
+        try: return pd.read_csv(CSV_FILE).to_dict('records')
+        except: return []
     return []
 
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = cargar_desde_csv()
-if 'activo_sel' not in st.session_state: st.session_state.activo_sel = "Nasdaq 100"
-if 'ticker_sel' not in st.session_state: st.session_state.ticker_sel = "^IXIC"
+if 'activo_sel' not in st.session_state: st.session_state.activo_sel, st.session_state.ticker_sel = "Nasdaq 100", "^IXIC"
 if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = None
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. CSS AVANZADO ---
+# --- 2. CSS PARA EL LOOK CREMA & WHITE ---
 st.markdown("""
     <style>
     .stApp { background-color: #fdf6e3 !important; }
-    .card-resumen { 
+    .card-ia { 
         background-color: #ffffff !important; 
         padding: 20px; border-radius: 12px; border: 1px solid #dcd3b6;
         margin-bottom: 15px; color: #586e75 !important;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
     .panel-vip { background-color: #ffffff; border: 2px solid #268bd2; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
     .val-buy { color: #859900 !important; font-weight: bold; }
     .val-sell { color: #dc322f !important; font-weight: bold; }
-    .sidebar-metrics { background-color: #eee8d5; padding: 15px; border-radius: 10px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. GESTIÓN FINANCIERA (APALANCAMIENTO 1:20) ---
-def calcular_balance():
-    # Convertimos valores a float para evitar errores de tipo al cargar del CSV
-    valor_total = sum([float(pos['valor_nominal']) for pos in st.session_state.cartera_abierta])
-    margen = valor_total / 20
-    disponible = st.session_state.wallet - margen
-    # Recomendable: Máximo 30% del capital disponible en una sola operación
-    recomendable = disponible * 0.3
-    return valor_total, margen, disponible, recomendable
-
-# --- 4. FUNCIÓN IA AUTOMÁTICA ---
+# --- 3. LÓGICA DE ANÁLISIS (CON FIX PARA EL ERROR DE RSI) ---
 def auto_analizar(t, n):
-    df_t = yf.download(t, period="2d", interval="1h")
-    if not df_t.empty:
+    try:
+        df_t = yf.download(t, period="5d", interval="1h", progress=False)
+        if df_t.empty: return None
         if isinstance(df_t.columns, pd.MultiIndex): df_t.columns = df_t.columns.get_level_values(0)
-        p = df_t['Close'].iloc[-1]
-        rsi = ta.rsi(df_t['Close']).iloc[-1]
-        adx = ta.adx(df_t['High'], df_t['Low'], df_t['Close'])['ADX_14'].iloc[-1]
         
-        prompt = f"Activo: {n}. Precio: {p}. ADX: {adx:.1f}. RSI: {rsi:.1f}. Genera 3 niveles (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Valor Nominal EUR]"
+        # FIX: Verificamos que haya datos para el RSI
+        rsi_series = ta.rsi(df_t['Close'], length=14)
+        rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
+        
+        adx_df = ta.adx(df_t['High'], df_t['Low'], df_t['Close'])
+        adx_val = adx_df['ADX_14'].iloc[-1] if adx_df is not None and not adx_df.empty else 20.0
+        
+        p = df_t['Close'].iloc[-1]
+        moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
+
+        prompt = f"Analista. Activo: {n}. Precio: {p} {moneda}. RSI: {rsi_val:.1f}. ADX: {adx_val:.1f}. Genera 3 señales: [INTRA], [MEDIO], [LARGO]. Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         res_ia = resp.choices[0].message.content
         
@@ -78,70 +74,80 @@ def auto_analizar(t, n):
             m = re.search(rf"{tag}:\s*(.*)", res_ia)
             return [p.strip() for p in m.group(1).split('|')] if m else ["0%","N/A","0","0","0","0","0"]
         
-        return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO")}
-    return None
+        return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO"), "moneda": moneda}
+    except Exception as e:
+        st.error(f"Error en análisis de {n}: {e}")
+        return None
 
-# --- 5. RADAR VIP & SELECCIÓN ---
-st.markdown('<div class="panel-vip"><h3>🚀 Radar VIP & Operativa Automática</h3>', unsafe_allow_html=True)
-activos = {"Nasdaq": "^IXIC", "Gold": "GC=F", "NVDA": "NVDA", "BTC": "BTC-USD", "EURUSD": "EURUSD=X", "S&P500": "^SPX", "DAX": "^GDAXI", "IBEX": "^IBEX"}
-c_vip = st.columns(len(activos))
-for i, (n, t) in enumerate(activos.items()):
-    if c_vip[i].button(n, key=f"v_{t}", use_container_width=True):
-        st.session_state.activo_sel = n
-        st.session_state.ticker_sel = t
-        st.session_state.analisis_auto = auto_analizar(t, n)
-        st.rerun()
+# --- 4. RADAR VIP Y CATEGORÍAS ---
+st.markdown('<div class="panel-vip"><h3>🚀 Radar de Oportunidades VIP</h3>', unsafe_allow_html=True)
+activos_dict = {
+    "Índices": {"Nasdaq": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI"},
+    "Acciones": {"NVDA": "NVDA", "Tesla": "TSLA", "Apple": "AAPL", "Iberdrola": "IBE.MC"},
+    "Materias/FX": {"Oro": "GC=F", "Brent": "BZ=F", "Bitcoin": "BTC-USD", "EUR/USD": "EURUSD=X"}
+}
+
+tabs = st.tabs(list(activos_dict.keys()))
+for i, (cat, lista) in enumerate(activos_dict.items()):
+    with tabs[i]:
+        cols = st.columns(len(lista))
+        for j, (n, t) in enumerate(lista.items()):
+            if cols[j].button(n, key=f"btn_{t}", use_container_width=True):
+                st.session_state.activo_sel, st.session_state.ticker_sel = n, t
+                st.session_state.analisis_auto = auto_analizar(t, n)
+                st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 6. GRÁFICA PROFESIONAL ---
-df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h")
+# --- 5. GRÁFICA ---
+df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h", progress=False)
 if not df.empty:
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=400, xaxis_rangeslider_visible=False)
+    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=400, xaxis_rangeslider_visible=False, margin=dict(t=0, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 7. RESULTADOS DEL ANÁLISIS ---
+# --- 6. ESTRATEGIAS AUTOMÁTICAS (LAS 3 POSICIONES) ---
 if st.session_state.analisis_auto:
-    st.subheader(f"📊 Estrategias para {st.session_state.activo_sel}")
-    cols = st.columns(3)
+    st.subheader(f"⚡ Estrategias Sugeridas: {st.session_state.activo_sel}")
+    cols_ia = st.columns(3)
+    res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
-        s = st.session_state.analisis_auto[tag]
-        with cols[i]:
-            st.markdown(f"""<div class="card-resumen">
-                <h4>{tag.upper()}</h4>
-                <p>Prob: <b>{s[0]}</b> | Acción: <b class="{'val-buy' if 'COMPRA' in s[1] else 'val-sell'}">{s[1]}</b></p>
-                <p>In: {s[3]} | Lotes: {s[2]}</p>
-                <p><b>TP: {s[4]}</b> | <b>SL: {s[5]}</b></p>
+        s = res[tag]
+        with cols_ia[i]:
+            st.markdown(f"""<div class="card-ia">
+                <h4 style="text-align:center;">{tag.upper()}</h4>
+                <p>🎯 Probabilidad: <b>{s[0]}</b></p>
+                <p>⚡ Acción: <b class="{'val-buy' if 'COMPRA' in s[1] else 'val-sell'}">{s[1]}</b></p>
+                <p>📦 Lotes: {s[2]} | In: {s[3]} {res['moneda']}</p>
+                <p>🏁 TP: <span class="val-buy">{s[4]}</span> | 🛡️ SL: <span class="val-sell">{s[5]}</span></p>
             </div>""", unsafe_allow_html=True)
-            if st.button(f"Ejecutar {tag}", key=f"e_{tag}"):
+            if st.button(f"Abrir {tag.capitalize()}", key=f"op_{tag}"):
                 st.session_state.cartera_abierta.append({
                     "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
                     "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], 
-                    "valor_nominal": s[6], "ticker": st.session_state.ticker_sel
+                    "valor_nominal": s[6], "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
                 })
                 guardar_en_csv()
                 st.rerun()
 
-# --- 8. BARRA LATERAL: FINANZAS Y POSICIONES ---
+# --- 7. SIDEBAR: CONTROL FINANCIERO ---
 with st.sidebar:
-    v_total, margen, disponible, recomend = calcular_balance()
-    st.header("🏢 Balance de Cuenta")
-    st.markdown(f"""<div class="sidebar-metrics">
-        <p><b>Equity:</b> {st.session_state.wallet:,.2f} €</p>
-        <p><b>Valor Nominal:</b> {v_total:,.2f} €</p>
-        <p><b>Margen Utilizado:</b> {margen:,.2f} €</p>
-        <p><b>Disponible:</b> {disponible:,.2f} €</p>
-        <hr>
-        <p style="color:#268bd2"><b>Sugerencia:</b> {recomend:,.2f} €</p>
-    </div>""", unsafe_allow_html=True)
-
-    st.subheader("💼 Posiciones Activas")
+    st.header("🏢 Balance Jacar")
+    # Cálculo de margen
+    v_total = sum([float(str(p['valor_nominal']).replace('EUR','').strip()) for p in st.session_state.cartera_abierta]) if st.session_state.cartera_abierta else 0
+    margen = v_total / 20
+    st.metric("Equity (EUR)", f"{st.session_state.wallet:,.2f} €")
+    st.write(f"**Margen Utilizado:** {margen:,.2f} €")
+    st.write(f"**Disponible:** {(st.session_state.wallet - margen):,.2f} €")
+    
+    st.divider()
+    st.subheader("💼 Posiciones Abiertas")
     for i, pos in enumerate(st.session_state.cartera_abierta):
         with st.container(border=True):
             st.write(f"**{pos['activo']}** ({pos['tipo']})")
-            pnl = st.number_input(f"PnL (€)", key=f"pnl_{pos['id']}", value=0.0)
-            if st.button("Cerrar", key=f"c_{pos['id']}"):
+            st.caption(f"In: {pos['entrada']} {pos.get('moneda','$')}")
+            pnl = st.number_input("PnL (€)", key=f"pnl_{pos['id']}", value=0.0)
+            if st.button("Cerrar", key=f"c_{pos['id']}", type="primary"):
                 st.session_state.wallet += pnl
                 st.session_state.cartera_abierta.pop(i)
                 guardar_en_csv()
