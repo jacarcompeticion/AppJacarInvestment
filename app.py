@@ -6,11 +6,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from openai import OpenAI
 from datetime import datetime
-import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V43", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V45", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
@@ -51,7 +50,6 @@ def auto_analizar(t, n):
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        # Prompt ultra-específico para evitar errores de formato
         prompt = f"""Analiza {n} a {p_actual}. RSI: {rsi_val:.1f}.
         Responde exclusivamente con este formato para 3 estrategias (INTRA, MEDIO, LARGO):
         INTRA: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
@@ -65,17 +63,15 @@ def auto_analizar(t, n):
         def extraer_limpio(tag):
             for line in res_ia.split('\n'):
                 if tag in line.upper():
-                    # Quitamos asteriscos, corchetes y el nombre del TAG
                     clean_line = line.replace('*', '').replace('[', '').replace(']', '')
                     parts = clean_line.split(':')[-1].split('|')
-                    if len(parts) >= 7:
-                        return [p.strip() for p in parts]
+                    if len(parts) >= 7: return [p.strip() for p in parts]
             return ["N/A", "ESPERAR", "0", "0", "0", "0", "0"]
 
         return {"intra": extraer_limpio("INTRA"), "medio": extraer_limpio("MEDIO"), "largo": extraer_limpio("LARGO"), "moneda": moneda}
     except: return None
 
-# --- 3. INTERFAZ: CATEGORÍAS (CON PREFIJOS) ---
+# --- 3. INTERFAZ: CATEGORÍAS ---
 st.markdown('<div style="background-color:#ffffff; padding:15px; border-radius:10px; border:2px solid #268bd2; margin-bottom:20px;"><h3>🚀 Radar VIP</h3>', unsafe_allow_html=True)
 vip = {"🏙️ US100": "NQ=F", "📀 ORO": "GC=F", "💡 NVDA": "NVDA", "₿ BTC": "BTC-USD"}
 cv = st.columns(4)
@@ -122,7 +118,7 @@ with t_main[3]: # DIVISAS
     with d1: grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X"}, "div_maj")
     with d2: grid({"₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD", "🐕 Doge":"DOGE-USD"}, "div_cry")
 
-# --- 4. GRÁFICA ---
+# --- 4. ÁREA DE GRÁFICO Y MÉTRICAS ---
 st.divider()
 c_graf, c_sel = st.columns([8, 2])
 with c_sel:
@@ -130,31 +126,60 @@ with c_sel:
     config_map = {"1h":{"p":"1d","i":"1m"},"6h":{"p":"1d","i":"2m"},"12h":{"p":"1d","i":"5m"},"1d":{"p":"1d","i":"5m"},"2d":{"p":"2d","i":"15m"},"3d":{"p":"3d","i":"15m"},"4d":{"p":"5d","i":"30m"}}
 
 df = obtener_datos(st.session_state.ticker_sel, config_map[franja]['p'], config_map[franja]['i'])
+
 if not df.empty:
+    # --- CÁLCULOS TÉCNICOS ---
+    p_actual = df['Close'].iloc[-1]
+    p_max, p_min = df['High'].max(), df['Low'].min()
+    res_calc, sop_calc = df['High'].tail(30).max(), df['Low'].tail(30).min()
+    vol_medio = df['Volume'].mean()
+    atr = ta.atr(df['High'], df['Low'], df['Close'], length=14).iloc[-1]
+    moneda_simb = "€" if any(x in st.session_state.ticker_sel for x in [".MC", "GDAXI", "IBEX"]) else "$"
+
+    # MÉTRICAS SUPERIORES (7 métricas)
+    m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+    m1.metric("Actual", f"{p_actual:,.2f}")
+    m2.metric("Máximo", f"{p_max:,.2f}")
+    m3.metric("Mínimo", f"{p_min:,.2f}")
+    m4.metric("Soporte", f"{sop_calc:,.2f}")
+    m5.metric("Resist.", f"{res_calc:,.2f}")
+    m6.metric("Volat. (ATR)", f"{atr:,.2f}")
+    m7.metric("Vol. Medio", f"{int(vol_medio):,}")
+
+    # --- LÓGICA DE COLOR DE VOLUMEN ---
+    df['VolColor'] = ['#00c805' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#ff3b30' for i in range(len(df))]
+
+    # DIBUJO DEL GRÁFICO PROFESIONAL
     df['EMA20'] = ta.ema(df['Close'], length=20)
     df['RSI'] = ta.rsi(df['Close'], length=14)
-    res_act, sop_act = df['High'].tail(30).max(), df['Low'].tail(30).min()
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
+    
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                        row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03)
+    
+    # 1. Velas y EMA
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#FF8C00', width=2), name="EMA 20"), row=1, col=1)
-    fig.add_hline(y=res_act, line_dash="dash", line_color="red", opacity=0.5, annotation_text="RES", row=1, col=1)
-    fig.add_hline(y=sop_act, line_dash="dash", line_color="green", opacity=0.5, annotation_text="SOP", row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False)
+    fig.add_hline(y=res_calc, line_dash="dash", line_color="red", opacity=0.4, row=1, col=1)
+    fig.add_hline(y=sop_calc, line_dash="dash", line_color="green", opacity=0.4, row=1, col=1)
+
+    # 2. Volumen con colores dinámicos
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df['VolColor'], name="Volumen", opacity=0.8), row=2, col=1)
+
+    # 3. RSI
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=3, col=1)
+    
+    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=650, xaxis_rangeslider_visible=False, margin=dict(t=5, b=5))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. PLAN ESTRATÉGICO CON COLORES DINÁMICOS ---
+# --- 5. PLAN ESTRATÉGICO ---
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
-        # Lógica de colores (Semáforo)
-        txt_accion = s[1].upper()
-        es_compra = "COMPRA" in txt_accion
-        es_venta = "VENTA" in txt_accion
-        
+        es_compra = "COMPRA" in s[1].upper()
+        es_venta = "VENTA" in s[1].upper()
         bg_color = "#e8f5e9" if es_compra else "#ffebee" if es_venta else "#ffffff"
         border_color = "#4caf50" if es_compra else "#f44336" if es_venta else "#ddd"
         text_color = "#2e7d32" if es_compra else "#c62828" if es_venta else "#333"
