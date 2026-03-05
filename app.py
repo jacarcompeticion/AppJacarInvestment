@@ -1,4 +1,4 @@
-import streamlit as st  # <-- Aseguramos que esta línea esté presente
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
@@ -9,16 +9,15 @@ from datetime import datetime
 import re
 import os
 
-# --- 1. CONFIGURACIÓN (Debe ser la primera instrucción de Streamlit) ---
-st.set_page_config(page_title="Jacar Pro V28", layout="wide", page_icon="🏦")
+# --- 1. CONFIGURACIÓN ---
+st.set_page_config(page_title="Jacar Pro V30", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 
 def guardar_en_csv():
     if st.session_state.cartera_abierta:
         pd.DataFrame(st.session_state.cartera_abierta).to_csv(CSV_FILE, index=False)
-    elif os.path.exists(CSV_FILE): 
-        os.remove(CSV_FILE)
+    elif os.path.exists(CSV_FILE): os.remove(CSV_FILE)
 
 def cargar_desde_csv():
     if os.path.exists(CSV_FILE):
@@ -26,7 +25,6 @@ def cargar_desde_csv():
         except: return []
     return []
 
-# Inicialización de estados
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = cargar_desde_csv()
 if 'activo_sel' not in st.session_state: st.session_state.activo_sel, st.session_state.ticker_sel = "Nasdaq 100", "^IXIC"
@@ -34,19 +32,18 @@ if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = Non
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. CSS PERSONALIZADO ---
+# --- 2. CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #fdf6e3 !important; }
     .card-ia { background-color: #ffffff !important; padding: 20px; border-radius: 12px; border: 1px solid #dcd3b6; margin-bottom: 10px; color: #586e75 !important; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
     .panel-vip { background-color: #ffffff; border: 2px solid #268bd2; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
-    .alerta-roja { background-color: #ffcccc; color: #cc0000; padding: 10px; border-radius: 8px; border: 2px solid #ff0000; font-weight: bold; text-align: center; }
     .val-buy { color: #859900 !important; font-weight: bold; }
     .val-sell { color: #dc322f !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. MOTOR DE ANÁLISIS MEJORADO ---
+# --- 3. MOTOR DE ANÁLISIS ATR ---
 def auto_analizar(t, n):
     try:
         df_t = yf.download(t, period="60d", interval="1h", progress=False)
@@ -55,12 +52,16 @@ def auto_analizar(t, n):
         
         rsi_val = ta.rsi(df_t['Close']).iloc[-1]
         ema_20 = ta.ema(df_t['Close'], length=20).iloc[-1]
+        atr = ta.atr(df_t['High'], df_t['Low'], df_t['Close'], length=14).iloc[-1]
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"""Analiza {n}. Precio: {p_actual}. RSI: {rsi_val:.1f}. 
-        Genera 3 señales DIFERENTES (INTRA, MEDIO, LARGO). No uses siempre Prob 50%.
-        Formato: TAG: [Prob%]|[COMPRA/VENTA]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"""
+        prompt = f"""Actúa como Trader Senior. Activo: {n}. Precio: {p_actual}. RSI: {rsi_val:.1f}. ATR: {atr:.4f}.
+        Genera 3 estrategias: INTRA (1x ATR), MEDIO (3x ATR), LARGO (10x ATR).
+        Responde estrictamente:
+        INTRA: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]
+        MEDIO: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]
+        LARGO: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"""
         
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         res_ia = resp.choices[0].message.content
@@ -70,7 +71,7 @@ def auto_analizar(t, n):
             if m:
                 parts = [p.strip().replace('[','').replace(']','') for p in m.group(1).split('|')]
                 if len(parts) >= 7: return parts
-            return ["65%","COMPRA","0.1",str(p_actual),str(p_actual*1.05),str(p_actual*0.97),"5000"]
+            return ["---","---","0","0","0","0","0"]
         
         return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO"), "moneda": moneda}
     except: return None
@@ -99,9 +100,9 @@ def render_grid(d):
 
 with t_acc:
     s_acc = st.tabs(["Tecnología", "Energía", "Banca", "Consumo"])
-    with s_acc[0]: render_grid({"NVDA":"NVDA", "Apple":"AAPL", "Tesla":"TSLA", "Microsoft":"MSFT"})
+    with s_acc[0]: render_grid({"NVDA":"NVDA", "Apple":"AAPL", "Tesla":"TSLA", "MSFT":"MSFT"})
     with s_acc[1]: render_grid({"Iberdrola":"IBE.MC", "Repsol":"REP.MC", "Exxon":"XOM"})
-    with s_acc[2]: render_grid({"Santander":"SAN.MC", "BBVA":"BBVA.MC", "CaixaBank":"CABK.MC"})
+    with s_acc[2]: render_grid({"Santander":"SAN.MC", "BBVA":"BBVA.MC", "JPMorgan":"JPM"})
     with s_acc[3]: render_grid({"Amazon":"AMZN", "Inditex":"ITX.MC", "Coca-Cola":"KO"})
 
 with t_ind:
@@ -119,25 +120,37 @@ with t_mat:
 with t_div:
     render_grid({"EUR/USD":"EURUSD=X", "GBP/USD":"GBPUSD=X", "USD/JPY":"JPY=X", "BTC/USD":"BTC-USD"})
 
-# --- 6. GRÁFICA (SUBPLOTS: PRECIO + RSI) ---
-df = yf.download(st.session_state.ticker_sel, period="10d", interval="1h", progress=False)
-if not df.empty:
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df['EMA20'] = ta.ema(df['Close'], length=20)
-    df['RSI'] = ta.rsi(df['Close'], length=14)
+# --- 6. GRÁFICA CON FILTRO TEMPORAL ---
+st.divider()
+c1, c2 = st.columns([2, 8])
+with c1:
+    st.subheader("📊 Gráfica")
+    periodo = st.selectbox("Rango de tiempo", ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "Max"], index=2)
+    
+    # Mapeo de periodos a intervalos compatibles con yfinance
+    mapping = {"1D": "5m", "5D": "30m", "1M": "1h", "6M": "1d", "YTD": "1d", "1Y": "1d", "5Y": "1wk", "Max": "1mo"}
+    intervalo = mapping[periodo]
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#268bd2', width=2), name="EMA 20"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False)
-    st.plotly_chart(fig, use_container_width=True)
+with c2:
+    df = yf.download(st.session_state.ticker_sel, period=periodo.lower(), interval=intervalo, progress=False)
+    if not df.empty:
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        df['EMA20'] = ta.ema(df['Close'], length=20)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#268bd2', width=2), name="EMA 20"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+        
+        fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig, use_container_width=True)
 
 # --- 7. ESTRATEGIAS ---
 if st.session_state.analisis_auto:
-    st.subheader(f"📊 Estrategias para {st.session_state.activo_sel}")
+    st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
@@ -158,7 +171,7 @@ if st.session_state.analisis_auto:
                 guardar_en_csv()
                 st.rerun()
 
-# --- 8. SIDEBAR (POSICIONES Y MARGEN) ---
+# --- 8. SIDEBAR ---
 with st.sidebar:
     st.header("🏢 Cartera Jacar")
     v_total = 0
@@ -172,7 +185,7 @@ with st.sidebar:
     st.write(f"**Margen:** {margen:,.2f} € ({porcentaje_margen:.1f}%)")
     
     if porcentaje_margen > 50:
-        st.markdown('<div class="alerta-roja">⚠️ RIESGO > 50%</div>', unsafe_allow_html=True)
+        st.markdown('<div class="alerta-roja">⚠️ RIESGO ALTO</div>', unsafe_allow_html=True)
     
     st.divider()
     st.subheader("💼 Posiciones")
