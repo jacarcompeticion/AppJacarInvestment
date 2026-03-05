@@ -11,12 +11,12 @@ import re
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
 
-# Estados de memoria
-for key, val in {
-    'wallet': 18000.0, 'historial': [], 'señal_actual': None, 
-    'cartera_abierta': [], 'activo_sel': "Oro"
-}.items():
-    if key not in st.session_state: st.session_state[key] = val
+# Inicialización segura de estados
+if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
+if 'historial' not in st.session_state: st.session_state.historial = []
+if 'señal_actual' not in st.session_state: st.session_state.señal_actual = None
+if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = []
+if 'activo_sel' not in st.session_state: st.session_state.activo_sel = "Oro"
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 activos = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
@@ -56,13 +56,23 @@ if not df.empty:
     fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=10, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-    # 5. ANÁLISIS IA
+    # 5. ANÁLISIS IA (Con corrección de Noticias)
     if st.button("⚖️ ANALIZAR Y CONTRASTAR FUENTES"):
         with st.spinner('Contrastando Bloomberg, Reuters y Flujos de Capital...'):
-            ticker = yf.Ticker(activos[seleccion])
-            noticias = "\n".join([n['title'] for n in ticker.news[:5]]) if ticker.news else "Sin noticias relevantes."
+            try:
+                ticker = yf.Ticker(activos[seleccion])
+                raw_news = ticker.news
+                # Extracción segura de títulos de noticias
+                noticias_lista = []
+                if raw_news:
+                    for n in raw_news[:5]:
+                        title = n.get('title') or n.get('heading') or "Noticia sin título"
+                        noticias_lista.append(title)
+                noticias = "\n".join(noticias_lista) if noticias_lista else "Sin noticias relevantes hoy."
+            except:
+                noticias = "Fuentes externas temporalmente no disponibles."
             
-            prompt = f"""Comité Inversión. Activo: {seleccion} a {precio_act}. RSI: {rsi_act:.2f}. Noticias: {noticias}.
+            prompt = f"""Analista Senior. Activo: {seleccion} a {precio_act}. RSI: {rsi_act:.2f}. Noticias: {noticias}.
             Responde con este formato exacto:
             RESUMEN: [Breve]
             ORDEN: [COMPRA, VENTA o ESPERAR]
@@ -74,13 +84,13 @@ if not df.empty:
             
             resp = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": "Analista Wall Street."}, {"role": "user", "content": prompt}]
+                messages=[{"role": "system", "content": "Trader institucional."}, {"role": "user", "content": prompt}]
             )
             res_ia = resp.choices[0].message.content
 
             def ext(tag):
-                match = re.search(rf"{tag}:\s*(.*?)(?=\n[A-Z]+:|$)", res_ia, re.S | re.I)
-                return match.group(1).strip() if match else "N/A"
+                match = re.search(rf"{tag}:\s*(.*?)(?=\n[A-ZÁÉÍÓÚ]+:|$)", res_ia, re.S | re.I)
+                return match.group(1).strip() if match else "Información no disponible"
 
             st.session_state.señal_actual = {
                 "resumen": ext("RESUMEN"), "orden": ext("ORDEN"), "niveles": ext("NIVELES"),
@@ -89,7 +99,7 @@ if not df.empty:
             }
             st.rerun()
 
-    # 6. INFORME (Fix del KeyError)
+    # 6. INFORME
     if st.session_state.señal_actual:
         s = st.session_state.señal_actual
         orden_txt = s.get('orden', 'ESPERAR').upper()
@@ -97,7 +107,7 @@ if not df.empty:
         
         with st.container(border=True):
             st.markdown(f"### 🛡️ Decisión: :{color}[{orden_txt}]")
-            st.markdown(f"**💡 {s.get('resumen', 'Sin resumen disponible')}**")
+            st.markdown(f"**💡 {s.get('resumen')}**")
             
             c1, c2 = st.columns(2)
             if "ESPERAR" not in orden_txt:
@@ -118,14 +128,15 @@ if not df.empty:
                 st.markdown(f"**📰 Prensa vs Técnica:** {s.get('prensa')}")
                 st.markdown(f"**🌍 Geopolítica:** {s.get('macro')}")
 
-    # CARTERA
+    # 7. CARTERA
     if st.session_state.cartera_abierta:
         st.divider()
         st.subheader("💼 Posiciones en Curso")
         for i, pos in enumerate(st.session_state.cartera_abierta):
             with st.expander(f"🟢 {pos['activo']} | {pos['tipo']} | In: {pos['entrada']}", expanded=True):
-                pnl = st.number_input(f"Profit/Loss Final ($)", value=0.0, key=f"p_{pos['id']}")
-                if st.button(f"Liquidar {pos['id']}", key=f"b_{pos['id']}"):
+                col1, col2 = st.columns([3, 1])
+                pnl = col1.number_input(f"Profit/Loss Final ($)", value=0.0, key=f"p_{pos['id']}")
+                if col2.button(f"Cerrar", key=f"b_{pos['id']}"):
                     st.session_state.wallet += pnl
                     st.session_state.historial.append({"Activo": pos['activo'], "PnL": pnl, "Fecha": pos['hora']})
                     st.session_state.cartera_abierta.pop(i)
