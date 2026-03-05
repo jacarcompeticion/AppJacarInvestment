@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V51", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V52", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
@@ -65,6 +65,9 @@ def obtener_datos(ticker, periodo, intervalo):
         df = yf.download(ticker, period=periodo, interval=intervalo, progress=False)
         if df.empty: return pd.DataFrame()
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        # Cálculo de Indicadores
+        df['EMA_20'] = ta.ema(df['Close'], length=20)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
         return df
     except: return pd.DataFrame()
 
@@ -75,11 +78,10 @@ def auto_analizar(t, n):
         p_act = round(float(df_t['Close'].iloc[-1]), 2)
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        # PROMPT REFORZADO PARA EVITAR EL MODO "ESPERAR"
         prompt = f"""Analiza {n} (Ticker: {t}) con precio actual {p_act}. 
-        Debes mojarte y dar una dirección (COMPRA o VENTA). NUNCA digas ESPERAR.
-        Calcula Take Profit y Stop Loss realistas según volatilidad.
-        Responde EXACTAMENTE con 3 líneas (una por cada TAG):
+        Dirección clara (COMPRA o VENTA). 
+        Calcula Take Profit y Stop Loss realistas.
+        Responde EXACTAMENTE con 3 líneas:
         INTRA: [Probabilidad]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]
         MEDIO: [Probabilidad]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]
         LARGO: [Probabilidad]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]"""
@@ -93,13 +95,11 @@ def auto_analizar(t, n):
             for line in lineas:
                 if tag in line.upper() and '|' in line:
                     parts = [p.strip().replace('*','').replace('[','').replace(']','') for p in line.split('|')]
-                    # El primer elemento contiene el TAG: Probabilidad%, lo limpiamos
                     parts[0] = parts[0].split(':')[-1].strip()
                     if len(parts) >= 6:
                         data_final[tag.lower()] = parts
                         linea_encontrada = True
                         break
-            # Si falla la extracción, forzamos un análisis lógico en lugar de "Esperar"
             if not linea_encontrada:
                 data_final[tag.lower()] = ["65%", "COMPRA", "0.10", str(p_act), str(round(p_act*1.03,2)), str(round(p_act*0.97,2)), "0"]
         return data_final
@@ -137,27 +137,41 @@ with t_main[1]: # INDICES
 with t_main[2]: # MATERIAL
     grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat")
 
-with t_main[3]: # DIVISAS
+with t_main[3]: # DIVISAS (Divisas)
     grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD"}, "div")
 
-# --- 5. GRÁFICO ---
+# --- 5. GRÁFICO TÉCNICO AVANZADO ---
 st.divider()
 df = obtener_datos(st.session_state.ticker_sel, "5d", "15m")
 if not df.empty:
     p_actual = df['Close'].iloc[-1]
+    soporte_val = df['Low'].tail(30).min()
+    resistencia_val = df['High'].tail(30).max()
+
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Precio", f"{p_actual:,.2f}")
-    m2.metric("Máximo", f"{df['High'].max():,.2f}")
-    m3.metric("Mínimo", f"{df['Low'].min():,.2f}")
-    m4.metric("Soporte", f"{df['Low'].tail(30).min():,.2f}")
-    m5.metric("Resist.", f"{df['High'].tail(30).max():,.2f}")
+    m2.metric("EMA 20", f"{df['EMA_20'].iloc[-1]:,.2f}")
+    m3.metric("RSI", f"{df['RSI'].iloc[-1]:,.2f}")
+    m4.metric("Soporte", f"{soporte_val:,.2f}")
+    m5.metric("Resist.", f"{resistencia_val:,.2f}")
     m6.metric("ATR", f"{ta.atr(df['High'], df['Low'], df['Close']).iloc[-1]:,.2f}")
 
-    df['VolColor'] = ['#00c805' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#ff3b30' for i in range(len(df))]
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
+    
+    # Velas y Media Móvil (EMA)
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df['VolColor'], name="Volumen"), row=2, col=1)
-    fig.update_layout(height=450, xaxis_rangeslider_visible=False, template="plotly_white", margin=dict(t=5,b=5))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='royalblue', width=1.5), name="EMA 20"), row=1, col=1)
+    
+    # Líneas de Soporte y Resistencia
+    fig.add_hline(y=resistencia_val, line_dash="dash", line_color="red", annotation_text="Resistencia", row=1, col=1)
+    fig.add_hline(y=soporte_val, line_dash="dash", line_color="green", annotation_text="Soporte", row=1, col=1)
+
+    # RSI
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple', width=1.5), name="RSI (14)"), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
+    fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
+
+    fig.update_layout(height=600, xaxis_rangeslider_visible=False, template="plotly_white", margin=dict(t=5,b=5))
     st.plotly_chart(fig, use_container_width=True)
 
 # --- 6. ESTRATEGIAS ---
@@ -165,16 +179,11 @@ if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     res = st.session_state.analisis_auto
     cols_ia = st.columns(3)
-    
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
         es_compra = "COMPRA" in s[1].upper()
         bg, b_col = ("#e8f5e9", "#4caf50") if es_compra else ("#ffebee", "#f44336")
-
-        ent_vis = round(limpiar_numero(s[3]), 2)
-        tp_vis = round(limpiar_numero(s[4]), 2)
-        sl_vis = round(limpiar_numero(s[5]), 2)
-
+        ent_vis, tp_vis, sl_vis = round(limpiar_numero(s[3]), 2), round(limpiar_numero(s[4]), 2), round(limpiar_numero(s[5]), 2)
         with cols_ia[i]:
             st.markdown(f"""<div style="background-color:{bg}; padding:15px; border-radius:12px; border:2px solid {b_col}; min-height:220px;">
                 <h4 style="margin:0;">{tag.upper()} <span style="float:right; color:#1a73e8;">🎯 {s[0]}</span></h4>
@@ -182,9 +191,7 @@ if st.session_state.analisis_auto:
                 <p style="margin:2px;">Entrada: <b>{ent_vis}</b> | Lotes: <b>{s[2]}</b></p>
                 <p style="margin:2px; color:#2e7d32;"><b>Take Profit:</b> {tp_vis}</p>
                 <p style="margin:2px; color:#c62828;"><b>Stop Loss:</b> {sl_vis}</p>
-                <p style="font-size:0.8em; color:grey; margin-top:8px;">Riesgo Máx: {(wr_actual/100)*2:.1f}%</p>
             </div>""", unsafe_allow_html=True)
-            
             with st.popover(f"🚀 Ejecutar {tag.upper()}", use_container_width=True):
                 l_f = st.number_input("Lotes", value=limpiar_numero(s[2]), step=0.01, key=f"l_{tag}")
                 p_f = st.number_input("Entrada", value=ent_vis, key=f"p_{tag}")
@@ -206,8 +213,7 @@ with st.sidebar:
         pnl_total_curso = 0
         for i, pos in enumerate(list(st.session_state.cartera_abierta)):
             with st.expander(f"📌 {pos['activo']} ({pos['lotes']} L)"):
-                ent_v = limpiar_numero(pos['entrada'])
-                lot_v = limpiar_numero(pos['lotes'])
+                ent_v, lot_v = limpiar_numero(pos['entrada']), limpiar_numero(pos['lotes'])
                 p_out = st.number_input("Precio Cierre", value=ent_v, key=f"out_{pos['id']}", format="%.2f")
                 es_buy = "COMPRA" in str(pos['tipo']).upper()
                 pnl_op = (p_out - ent_v) * lot_v * 100 if es_buy else (ent_v - p_out) * lot_v * 100
