@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V40", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V41", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
@@ -65,12 +65,12 @@ def auto_analizar(t, n):
         return {"intra": extraer("INTRA"), "medio": extraer("MEDIO"), "largo": extraer("LARGO"), "moneda": moneda}
     except: return None
 
-# --- 3. INTERFAZ: CATEGORÍAS ---
+# --- 3. INTERFAZ: CATEGORÍAS (CON FIX DE LLAVES DUPLICADAS) ---
 st.markdown('<div style="background-color:#ffffff; padding:15px; border-radius:10px; border:2px solid #268bd2; margin-bottom:20px;"><h3>🚀 Radar VIP</h3>', unsafe_allow_html=True)
 vip = {"🏙️ US100": "NQ=F", "📀 ORO": "GC=F", "💡 NVDA": "NVDA", "₿ BTC": "BTC-USD"}
 cv = st.columns(4)
 for i, (n, t) in enumerate(vip.items()):
-    if cv[i].button(f"{n}", key=f"v_{t}", use_container_width=True):
+    if cv[i].button(f"{n}", key=f"vip_{t}", use_container_width=True):
         st.session_state.activo_sel, st.session_state.ticker_sel = n, t
         st.session_state.analisis_auto = auto_analizar(t, n)
         st.rerun()
@@ -78,39 +78,41 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 t_main = st.tabs(["📈 Stocks", "📊 Indices", "🏗️ Material", "💱 Divisas"])
 
-def grid(d):
+# Función grid mejorada con prefijo para evitar errores de duplicados
+def grid(d, prefix=""):
     cols = st.columns(4)
     for i, (n, t) in enumerate(d.items()):
-        if cols[i % 4].button(n, key=f"btn_{t}", use_container_width=True):
+        # El key ahora es único combinando prefijo + ticker
+        if cols[i % 4].button(n, key=f"btn_{prefix}_{t}", use_container_width=True):
             st.session_state.activo_sel, st.session_state.ticker_sel = n, t
             st.session_state.analisis_auto = auto_analizar(t, n)
             st.rerun()
 
 with t_main[0]: # STOCKS
-    s1, s2, s3, s4, s5, s6 = st.tabs(["🔥 High Alpha (10)", "💻 Tecnología", "⛽ Energía", "🏦 Banca", "🛒 Consumo", "🇪🇸 España"])
-    with s1: grid({"🚀 MicroStrategy":"MSTR", "🪙 Coinbase":"COIN", "🧠 Palantir":"PLTR", "⚡ SMCI":"SMCI", "🧬 Eli Lilly":"LLY", "🖥️ AMD":"AMD", "🛰️ SpaceX (Tesla)":"TSLA", "💳 Adyen":"ADYEN.AS", "💉 Moderna":"MRNA", "🕹️ Roblox":"RBLX"})
-    with s2: grid({"🍏 Apple":"AAPL", "🤖 NVDA":"NVDA", "🚗 Tesla":"TSLA", "🔍 Google":"GOOGL", "📦 Amazon":"AMZN"})
-    with s3: grid({"⛽ Exxon":"XOM", "🐚 Shell":"SHEL", "🔥 Chevron":"CVX"})
-    with s4: grid({"💳 Visa":"V", "🏦 JPMorgan":"JPM", "📈 Goldman":"GS"})
-    with s5: grid({"🥤 Coca-Cola":"KO", "🍔 McDonald's":"MCD", "🛒 Walmart":"WMT"})
-    with s6: grid({"👕 Inditex":"ITX.MC", "⚡ Iberdrola":"IBE.MC", "🏦 Santander":"SAN.MC", "🏦 BBVA":"BBVA.MC"})
+    s1, s2, s3, s4, s5, s6 = st.tabs(["🔥 High Alpha", "💻 Tecnología", "⛽ Energía", "🏦 Banca", "🛒 Consumo", "🇪🇸 España"])
+    with s1: grid({"🚀 MicroStrategy":"MSTR", "🪙 Coinbase":"COIN", "🧠 Palantir":"PLTR", "⚡ SMCI":"SMCI", "🧬 Eli Lilly":"LLY", "🖥️ AMD":"AMD", "🛰️ SpaceX (Tesla)":"TSLA", "💳 Adyen":"ADYEN.AS", "💉 Moderna":"MRNA", "🕹️ Roblox":"RBLX"}, "alpha")
+    with s2: grid({"🍏 Apple":"AAPL", "🤖 NVDA":"NVDA", "🚗 Tesla":"TSLA", "🔍 Google":"GOOGL", "📦 Amazon":"AMZN"}, "tech")
+    with s3: grid({"⛽ Exxon":"XOM", "🐚 Shell":"SHEL", "🔥 Chevron":"CVX"}, "ener")
+    with s4: grid({"💳 Visa":"V", "🏦 JPMorgan":"JPM", "📈 Goldman":"GS"}, "bank")
+    with s5: grid({"🥤 Coca-Cola":"KO", "🍔 McDonald's":"MCD", "🛒 Walmart":"WMT"}, "cons")
+    with s6: grid({"👕 Inditex":"ITX.MC", "⚡ Iberdrola":"IBE.MC", "🏦 Santander":"SAN.MC", "🏦 BBVA":"BBVA.MC"}, "esp")
 
 with t_main[1]: # INDICES
     i1, i2, i3 = st.tabs(["🇺🇸 EE.UU", "🇪🇺 Europa", "🌏 Asia"])
-    with i1: grid({"🇺🇸 US100":"NQ=F", "📈 S&P 500":"ES=F", "🏭 Dow Jones":"YM=F"})
-    with i2: grid({"🇩🇪 DAX 40":"^GDAXI", "🇪🇸 IBEX 35":"^IBEX", "🇫🇷 CAC 40":"^FCHI"})
-    with i3: grid({"🇯🇵 Nikkei":"^N225", "🇭🇰 Hang Seng":"^HSI"})
+    with i1: grid({"🇺🇸 US100":"NQ=F", "📈 S&P 500":"ES=F", "🏭 Dow Jones":"YM=F"}, "idx_usa")
+    with i2: grid({"🇩🇪 DAX 40":"^GDAXI", "🇪🇸 IBEX 35":"^IBEX", "🇫🇷 CAC 40":"^FCHI"}, "idx_eu")
+    with i3: grid({"🇯🇵 Nikkei":"^N225", "🇭🇰 Hang Seng":"^HSI"}, "idx_as")
 
 with t_main[2]: # MATERIAL
     m1, m2, m3 = st.tabs(["🥇 Metales", "🛢️ Energía", "🌾 Agro"])
-    with m1: grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🥉 Cobre":"HG=F"})
-    with m2: grid({"🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"})
-    with m3: grid({"🌾 Trigo":"ZW=F", "☕ Café":"KC=F", "🌽 Maíz":"ZC=F"})
+    with m1: grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🥉 Cobre":"HG=F"}, "mat_met")
+    with m2: grid({"🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat_ene")
+    with m3: grid({"🌾 Trigo":"ZW=F", "☕ Café":"KC=F", "🌽 Maíz":"ZC=F"}, "mat_agr")
 
 with t_main[3]: # DIVISAS
     d1, d2 = st.tabs(["💵 Principales", "🪙 Cripto"])
-    with d1: grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X"})
-    with d2: grid({"₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD", "🐕 Doge":"DOGE-USD"})
+    with d1: grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X"}, "div_maj")
+    with d2: grid({"₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD", "🐕 Doge":"DOGE-USD"}, "div_cry")
 
 # --- 4. GRÁFICA (EMA NARANJA) ---
 st.divider()
@@ -126,7 +128,10 @@ if not df.empty:
     res_act, sop_act = df['High'].tail(30).max(), df['Low'].tail(30).min()
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
+    
+    # EMA NARANJA RESALTADA
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#FF8C00', width=2), name="EMA 20"), row=1, col=1)
+    
     fig.add_hline(y=res_act, line_dash="dash", line_color="red", opacity=0.5, annotation_text="RES", row=1, col=1)
     fig.add_hline(y=sop_act, line_dash="dash", line_color="green", opacity=0.5, annotation_text="SOP", row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
@@ -134,16 +139,17 @@ if not df.empty:
     fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False, margin=dict(t=5, b=5))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. PLAN ESTRATÉGICO (FONDO DINÁMICO) ---
+# --- 5. PLAN ESTRATÉGICO (FONDO SEMÁFORO) ---
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Estrategia: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
-        # Lógica de color de fondo
-        bg_color = "#e8f5e9" if "COMPRA" in s[1].upper() else "#ffebee" if "VENTA" in s[1].upper() else "#ffffff"
-        border_color = "#4caf50" if "COMPRA" in s[1].upper() else "#f44336" if "VENTA" in s[1].upper() else "#ddd"
+        # Colores dinámicos
+        es_compra = "COMPRA" in s[1].upper()
+        bg_color = "#e8f5e9" if es_compra else "#ffebee" if "VENTA" in s[1].upper() else "#ffffff"
+        border_color = "#4caf50" if es_compra else "#f44336" if "VENTA" in s[1].upper() else "#ddd"
         
         with cols_ia[i]:
             st.markdown(f"""<div style="background-color:{bg_color}; padding:15px; border-radius:10px; border:2px solid {border_color}; height:185px;">
@@ -157,7 +163,7 @@ if st.session_state.analisis_auto:
                 st.session_state.cartera_abierta.append({"id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel, "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], "valor_nominal": s[6], "ticker": st.session_state.ticker_sel, "moneda": res['moneda']})
                 guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
 
-# --- 6. SIDEBAR ---
+# --- 6. SIDEBAR (CARTERA + HISTÓRICO) ---
 with st.sidebar:
     st.header("🏢 Terminal Jacar")
     st.metric("Balance Equity", f"{st.session_state.wallet:,.2f} €")
