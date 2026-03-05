@@ -1,107 +1,115 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import pandas_ta as ta
 import plotly.graph_objects as go
 from openai import OpenAI
-import os
-from streamlit_autorefresh import st_autorefresh
+from datetime import datetime
 
-# Refrescar la app automáticamente cada 60 segundos
-count = st_autorefresh(interval=60000, limit=100, key="framer")
+# 1. CONFIGURACIÓN E INICIO (Puntos 5 y 8)
+st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
 
+# Inicializar estados de memoria (Para que no se borren al interactuar)
+if 'wallet' not in st.session_state:
+    st.session_state.wallet = 18000.0
+if 'historial' not in st.session_state:
+    st.session_state.historial = []
 
-# 1. Configuración de página
-st.set_page_config(page_title="AppJacarInvestment", layout="wide")
-st.title("🛡️ AppJacarInvestment: Terminal Pro")
-
-# 2. Conexión con OpenAI
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# 3. Panel Lateral
+# 2. PANEL LATERAL (Puntos 5, 8, 9, 10)
 with st.sidebar:
-    st.header("💰 Cuenta")
-    capital = st.number_input("Capital (USD)", value=18000.0)
-    riesgo_per = st.slider("Riesgo (%)", 0.1, 5.0, 1.0)
+    st.title(f"💰 Balance: {st.session_state.wallet:,.2f} USD")
     st.divider()
-    activos = {
-        "Oro": "GC=F",
-        "Petróleo Brent": "BZ=F",
-        "Nasdaq 100": "^IXIC",
-        "DAX 40": "^GDAXI",
-        "EUR/USD": "EURUSD=X"
-    }
-    seleccion = st.selectbox("Activo", list(activos.keys()))
+    st.header("⚙️ Estrategia")
+    obj_diario = st.number_input("Objetivo Diario ($)", value=200.0)
+    perfil = st.radio("Frecuencia (Punto 9)", ["Scalping (Muchas/Poco)", "Swing (Pocas/Mucho)"])
+    tf_visual = st.selectbox("Temporalidad (Punto 10)", ["1m", "5m", "15m", "1h", "1d"], index=2)
+    
+    st.divider()
+    activos = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
+    seleccion = st.selectbox("Activo a analizar", list(activos.keys()))
 
-# 4. Descarga y Limpieza de Datos (IMPORTANTE)
+# 3. OBTENCIÓN Y ANÁLISIS DE DATOS (Puntos 2, 6, 7)
 ticker = activos[seleccion]
-df = yf.download(ticker, period="5d", interval="15m")
+df = yf.download(ticker, period="5d", interval=tf_visual)
+if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+df = df.dropna()
 
 if not df.empty:
-    # --- TRUCO PARA ARREGLAR LAS COLUMNAS ---
-    # Si Yahoo manda columnas dobles, esto las aplana a nombres simples: 'Open', 'Close', etc.
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    # Indicadores Técnicos (Punto 2)
+    df['EMA_20'] = ta.ema(df['Close'], length=20)
+    df['RSI'] = ta.rsi(df['Close'], length=14)
     
-    df = df.dropna()
-
-    # Precios clave
+    # Cálculo de Soportes/Resistencias (Punto 7)
+    resistencia = float(df['High'].tail(30).max())
+    soporte = float(df['Low'].tail(30).min())
     precio_act = float(df['Close'].iloc[-1])
-    high_recent = float(df['High'].max())
-    low_recent = float(df['Low'].min())
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Precio Actual", f"{precio_act:.4f}")
-    col2.metric("Máximo", f"{high_recent:.4f}")
-    col3.metric("Mínimo", f"{low_recent:.4f}")
+    # 4. PANEL DE OPORTUNIDADES (Punto 1)
+    st.subheader("🚀 Monitor de Oportunidades")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(f"Precio {seleccion}", f"{precio_act:.4f}")
+    c2.metric("RSI (Fuerza)", f"{df['RSI'].iloc[-1]:.2f}")
+    c3.metric("Resistencia", f"{resistencia:.4f}")
+    c4.metric("Soporte", f"{soporte:.4f}")
 
-    # 5. Gráfico de Velas con Auto-Zoom
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index,
-        open=df['Open'], high=df['High'],
-        low=df['Low'], close=df['Close'],
-        increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-    )])
+    # 5. GRÁFICO PROFESIONAL (Punto 11)
+    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Velas")])
     
-    fig.update_layout(
-        template="plotly_dark",
-        height=500,
-        xaxis_rangeslider_visible=False,
-        yaxis=dict(autorange=True, fixedrange=False, side="right", tickformat=".4f"),
-        margin=dict(l=20, r=50, t=30, b=20)
-    )
+    # Dibujar líneas de Soporte/Resistencia (Punto 11)
+    fig.add_hline(y=resistencia, line_dash="dash", line_color="cyan", opacity=0.3, annotation_text="Resistencia H1")
+    fig.add_hline(y=soporte, line_dash="dash", line_color="orange", opacity=0.3, annotation_text="Soporte H1")
     
+    fig.update_layout(template="plotly_dark", height=500, yaxis=dict(autorange=True, side="right", gridcolor='gray'), xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    # 6. Orden Directa de la IA
-    if st.button("🚀 OBTENER ORDEN DE MERCADO DIRECTA"):
-        with st.spinner('Analizando tendencia...'):
-            # Tomamos los últimos 20 cierres para que la IA vea la acción del precio
-            precios_lista = df['Close'].tail(20).tolist()
-            
+    # 6. GENERACIÓN DE ORDEN Y REGISTRO (Puntos 3, 4)
+    if st.button("🧠 ANALIZAR Y GENERAR ORDEN"):
+        with st.spinner('IA Calculando rangos basándose en contexto geopolítico y técnico...'):
             prompt = f"""
-            Eres un TRADER EJECUTOR. No des consejos, da una ORDEN DE TRADING.
-            ACTIVO: {seleccion} a {precio_act:.4f}.
-            Contexto: Max {high_recent:.4f}, Min {low_recent:.4f}.
-            Últimos cierres: {precios_lista}
-            Capital: {capital} USD. Riesgo: {riesgo_per}%.
-
-            RESPONDE CON ESTE FORMATO:
-            - ACCIÓN: [COMPRA / VENTA / ESPERAR]
-            - ENTRADA: [Precio]
-            - LOTES: [Cálculo exacto]
-            - STOP LOSS: [Precio]
-            - TAKE PROFIT: [Precio]
-            - MOTIVO: [Breve frase técnica]
+            Analiza {seleccion}. Precio: {precio_act}. RSI: {df['RSI'].iloc[-1]:.2f}. 
+            Soporte: {soporte}, Resistencia: {resistencia}. Estilo: {perfil}. Objetivo: {obj_diario}.
+            Dame una orden DIRECTA: Acción, Entrada, Lotes, SL y TP. 
+            Ten en cuenta patrones históricos y situación de mercado actual.
             """
-            
-            try:
-                resp = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "system", "content": "Solo das órdenes directas de trading basadas en datos técnicos."},
-                              {"role": "user", "content": prompt}]
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": "Eres un ejecutor de trading preciso."}, {"role": "user", "content": prompt}]
             )
-                st.info(resp.choices[0].message.content)
-            except Exception as e:
-                st.error(f"Error IA: {e}")
+            st.session_state.ultima_orden = resp.choices[0].message.content
+            st.session_state.precio_sugerido = precio_act
+
+    if 'ultima_orden' in st.session_state:
+        st.markdown("---")
+        st.subheader("📋 Orden Detectada")
+        st.info(st.session_state.ultima_orden)
+        
+        with st.expander("✅ REGISTRAR EJECUCIÓN (Journaling)", expanded=True):
+            col_reg1, col_reg2, col_reg3 = st.columns(3)
+            p_entrada = col_reg1.number_input("Precio Real de Entrada", value=st.session_state.precio_sugerido)
+            lotes_real = col_reg2.number_input("Lotes Finales", value=0.1)
+            pnl = col_reg3.number_input("Resultado Final ($)", value=0.0)
+            
+            if st.button("💾 Guardar en Historial y Actualizar Bankroll"):
+                st.session_state.wallet += pnl
+                st.session_state.historial.append({
+                    "Fecha": datetime.now().strftime("%d/%m %H:%M"),
+                    "Activo": seleccion,
+                    "Entrada": p_entrada,
+                    "Resultado": pnl
+                })
+                st.success("¡Operación registrada! El balance se ha actualizado.")
+                # Limpiar orden actual para la siguiente
+                del st.session_state.ultima_orden
+                st.rerun()
+
+    # 7. RESUMEN SEMANAL/MENSUAL (Punto 4)
+    st.divider()
+    st.subheader("📊 Historial de Operaciones")
+    if st.session_state.historial:
+        st.table(pd.DataFrame(st.session_state.historial))
+    else:
+        st.write("No hay operaciones registradas este mes.")
 else:
-    st.warning("Mercado cerrado o sin datos. Prueba con el Oro.")
+    st.warning("No hay datos disponibles. Verifica la conexión o el mercado.")
