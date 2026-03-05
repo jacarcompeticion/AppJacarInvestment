@@ -47,24 +47,57 @@ if not df.empty:
     soporte = float(df['Low'].tail(40).min())
     precio_act = float(df['Close'].iloc[-1])
 
-    # 4. GRÁFICO CON DIBUJO TÉCNICO
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.8])
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Velas"), row=1, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Volumen", marker_color='gray', opacity=0.3), row=2, col=1)
+  # 4. GRÁFICO CON VOLUMEN DINÁMICO (Puntos 10 y 11)
+    from plotly.subplots import make_subplots
+
+    # Creamos colores para el volumen basados en el cierre vs apertura
+    colors_vol = ['#26a69a' if row['Close'] >= row['Open'] else '#ef5350' for _, row in df.iterrows()]
+
+    # Subplots con escala independiente para el volumen
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.05, 
+                        row_heights=[0.7, 0.3]) # 70% precio, 30% volumen
+
+    # Añadir Velas
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'],
+        low=df['Low'], close=df['Close'], name="Precio"
+    ), row=1, col=1)
+
+    # Añadir Volumen con Colores
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['Volume'], 
+        name="Volumen", 
+        marker_color=colors_vol,
+        opacity=0.8
+    ), row=2, col=1)
     
-    # Soportes y Resistencias dinámicos
+    # Soportes y Resistencias
     fig.add_hline(y=resistencia, line_dash="dash", line_color="cyan", opacity=0.3, row=1, col=1)
     fig.add_hline(y=soporte, line_dash="dash", line_color="orange", opacity=0.3, row=1, col=1)
 
     # Dibujar Orden de la IA si existe
     if st.session_state.trade_coords:
         tc = st.session_state.trade_coords
-        color = "rgba(0, 255, 0, 0.2)" if "COMPRA" in tc['tipo'].upper() else "rgba(255, 0, 0, 0.2)"
-        fig.add_hrect(y0=tc['entrada'], y1=tc['tp'], fillcolor=color, line_width=0, row=1, col=1)
-        fig.add_hline(y=tc['sl'], line_color="red", line_width=2, line_dash="dot", row=1, col=1)
+        color_zona = "rgba(0, 255, 0, 0.15)" if "COMPRA" in tc['tipo'].upper() else "rgba(255, 0, 0, 0.15)"
+        fig.add_hrect(y0=tc['entrada'], y1=tc['tp'], fillcolor=color_zona, line_width=0, row=1, col=1)
+        fig.add_hline(y=tc['sl'], line_color="#ff5252", line_width=2, line_dash="dot", row=1, col=1)
 
-    fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=30, b=10))
+    # --- CONFIGURACIÓN DE ESCALAS (Auto-ajuste total) ---
+    fig.update_layout(
+        template="plotly_dark", 
+        height=700, 
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=50, t=30, b=10),
+        showlegend=False
+    )
+
+    # Ajuste eje Y Precio (Lado derecho)
     fig.update_yaxes(autorange=True, fixedrange=False, side="right", row=1, col=1)
+    
+    # Ajuste eje Y Volumen (Escalable y visible)
+    fig.update_yaxes(autorange=True, showgrid=False, row=2, col=1)
+
     st.plotly_chart(fig, use_container_width=True)
 
     # 5. BOTÓN E IA
