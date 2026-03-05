@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V41", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V42", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
@@ -51,7 +51,7 @@ def auto_analizar(t, n):
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"Activo:{n} Precio:{p_actual} RSI:{rsi_val:.1f}. Genera 3 planes: INTRA, MEDIO, LARGO. Formato: TAG: Prob% | Accion | Lotes | Entrada | TP | SL | Nominal"
+        prompt = f"Activo:{n} Precio:{p_actual} RSI:{rsi_val:.1f}. Genera 3 planes: INTRA, MEDIO, LARGO. Formato estricto: TAG: Prob% | Accion | Lotes | Entrada | TP | SL | Nominal"
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0)
         res_ia = resp.choices[0].message.content
         
@@ -65,7 +65,7 @@ def auto_analizar(t, n):
         return {"intra": extraer("INTRA"), "medio": extraer("MEDIO"), "largo": extraer("LARGO"), "moneda": moneda}
     except: return None
 
-# --- 3. INTERFAZ: CATEGORÍAS (CON FIX DE LLAVES DUPLICADAS) ---
+# --- 3. INTERFAZ: CATEGORÍAS ---
 st.markdown('<div style="background-color:#ffffff; padding:15px; border-radius:10px; border:2px solid #268bd2; margin-bottom:20px;"><h3>🚀 Radar VIP</h3>', unsafe_allow_html=True)
 vip = {"🏙️ US100": "NQ=F", "📀 ORO": "GC=F", "💡 NVDA": "NVDA", "₿ BTC": "BTC-USD"}
 cv = st.columns(4)
@@ -78,11 +78,9 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 t_main = st.tabs(["📈 Stocks", "📊 Indices", "🏗️ Material", "💱 Divisas"])
 
-# Función grid mejorada con prefijo para evitar errores de duplicados
 def grid(d, prefix=""):
     cols = st.columns(4)
     for i, (n, t) in enumerate(d.items()):
-        # El key ahora es único combinando prefijo + ticker
         if cols[i % 4].button(n, key=f"btn_{prefix}_{t}", use_container_width=True):
             st.session_state.activo_sel, st.session_state.ticker_sel = n, t
             st.session_state.analisis_auto = auto_analizar(t, n)
@@ -128,10 +126,7 @@ if not df.empty:
     res_act, sop_act = df['High'].tail(30).max(), df['Low'].tail(30).min()
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-    
-    # EMA NARANJA RESALTADA
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#FF8C00', width=2), name="EMA 20"), row=1, col=1)
-    
     fig.add_hline(y=res_act, line_dash="dash", line_color="red", opacity=0.5, annotation_text="RES", row=1, col=1)
     fig.add_hline(y=sop_act, line_dash="dash", line_color="green", opacity=0.5, annotation_text="SOP", row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
@@ -139,31 +134,43 @@ if not df.empty:
     fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False, margin=dict(t=5, b=5))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. PLAN ESTRATÉGICO (FONDO SEMÁFORO) ---
+# --- 5. PLAN ESTRATÉGICO CON COLORES DINÁMICOS ---
+
+
 if st.session_state.analisis_auto:
-    st.subheader(f"🛡️ Estrategia: {st.session_state.activo_sel}")
+    st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
-        # Colores dinámicos
+        # Lógica de colores de fondo según la recomendación de la IA
         es_compra = "COMPRA" in s[1].upper()
-        bg_color = "#e8f5e9" if es_compra else "#ffebee" if "VENTA" in s[1].upper() else "#ffffff"
-        border_color = "#4caf50" if es_compra else "#f44336" if "VENTA" in s[1].upper() else "#ddd"
+        es_venta = "VENTA" in s[1].upper()
         
-        with cols_ia[i]:
-            st.markdown(f"""<div style="background-color:{bg_color}; padding:15px; border-radius:10px; border:2px solid {border_color}; height:185px;">
-                <h4 style="text-align:center; color:#333; margin:0;">{tag.upper()} ({s[0]})</h4>
-                <p style="text-align:center; font-weight:bold; font-size:1.1em; color:{border_color}; margin:5px;">{s[1]}</p>
-                <p style="margin:2px;">📦 Lotes: {s[2]} | In: <b>{s[3]}</b></p>
-                <p style="margin:2px;">🏁 TP: <span style="color:green; font-weight:bold;">{s[4]}</span> | 🛡️ SL: <span style="color:red; font-weight:bold;">{s[5]}</span></p>
-                <p style="font-size:0.8em; color:grey;">Nominal: {s[6]} {res['moneda']}</p>
-            </div>""", unsafe_allow_html=True)
-            if st.button(f"Ejecutar {tag.title()}", key=f"op_{tag}"):
-                st.session_state.cartera_abierta.append({"id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel, "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], "valor_nominal": s[6], "ticker": st.session_state.ticker_sel, "moneda": res['moneda']})
-                guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
+        bg_color = "#e8f5e9" if es_compra else "#ffebee" if es_venta else "#ffffff"
+        border_color = "#4caf50" if es_compra else "#f44336" if es_venta else "#ddd"
+        text_color = "#2e7d32" if es_compra else "#c62828" if es_venta else "#333"
 
-# --- 6. SIDEBAR (CARTERA + HISTÓRICO) ---
+        with cols_ia[i]:
+            st.markdown(f"""
+                <div style="background-color:{bg_color}; padding:15px; border-radius:12px; border:2px solid {border_color}; height:190px;">
+                    <h4 style="text-align:center; color:#333; margin:0; font-size:1.1em;">{tag.upper()} ({s[0]})</h4>
+                    <p style="text-align:center; font-weight:bold; font-size:1.3em; color:{text_color}; margin:8px;">{s[1]}</p>
+                    <p style="margin:2px; font-size:0.9em;">📦 Lotes: <b>{s[2]}</b> | In: <b>{s[3]}</b></p>
+                    <p style="margin:2px; font-size:0.9em;">🏁 TP: <span style="color:green; font-weight:bold;">{s[4]}</span> | 🛡️ SL: <span style="color:red; font-weight:bold;">{s[5]}</span></p>
+                    <p style="font-size:0.8em; color:grey; margin-top:5px;">Nominal: {s[6]} {res['moneda']}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button(f"Ejecutar {tag.title()}", key=f"op_{tag}"):
+                st.session_state.cartera_abierta.append({
+                    "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
+                    "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], 
+                    "valor_nominal": s[6], "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
+                })
+                guardar_datos(st.session_state.cartera_abierta, CSV_FILE)
+                st.rerun()
+
+# --- 6. SIDEBAR ---
 with st.sidebar:
     st.header("🏢 Terminal Jacar")
     st.metric("Balance Equity", f"{st.session_state.wallet:,.2f} €")
@@ -179,4 +186,7 @@ with st.sidebar:
     with tab_side[1]:
         if st.session_state.historial:
             st.dataframe(pd.DataFrame(st.session_state.historial).iloc[::-1], hide_index=True)
-            if st.button("Limpiar"): st.session_state.historial = []; guardar_datos([], HIST_FILE); st.rerun()
+            if st.button("Limpiar Histórico"): 
+                st.session_state.historial = []
+                guardar_datos([], HIST_FILE)
+                st.rerun()
