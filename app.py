@@ -9,7 +9,7 @@ from datetime import datetime
 import re
 
 # 1. CONFIGURACIÓN
-st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
+st.set_page_config(page_title="Jacar Pro - Institutional Terminal", layout="wide")
 
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'historial' not in st.session_state: st.session_state.historial = []
@@ -21,23 +21,23 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 activos = {"Oro": "GC=F", "Nasdaq": "^IXIC", "EUR/USD": "EURUSD=X", "Brent": "BZ=F", "Bitcoin": "BTC-USD"}
 
 # 2. PANEL SUPERIOR
-st.subheader("🚀 Monitor de Oportunidades")
 cols_top = st.columns(len(activos))
 for i, nombre in enumerate(activos.keys()):
     if cols_top[i].button(f"📊 {nombre}", key=f"btn_top_{nombre}", use_container_width=True):
         st.session_state.activo_sel = nombre
         st.rerun()
 
-# 3. SIDEBAR
+# 3. SIDEBAR XTB
 with st.sidebar:
-    st.title(f"💰 Equity: {st.session_state.wallet:,.2f} USD")
+    st.header("🎛️ Terminal de Control")
+    st.metric("Equity Balance", f"{st.session_state.wallet:,.2f} USD")
     st.divider()
-    perfil = st.selectbox("Perfil", ["Institucional", "Hedge Fund", "Retail"])
+    perfil = st.selectbox("Perfil de Riesgo", ["Institucional", "Hedge Fund", "Retail"])
     tf_visual = st.selectbox("Temporalidad", ["1m", "5m", "15m", "1h", "1d"], index=2)
     seleccion = st.selectbox("Activo", list(activos.keys()), index=list(activos.keys()).index(st.session_state.activo_sel))
     st.session_state.activo_sel = seleccion
 
-# 4. DATOS
+# 4. DATOS E INDICADORES (RSI + EMA + VOL)
 df = yf.download(activos[seleccion], period="5d", interval=tf_visual)
 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 df = df.dropna()
@@ -48,90 +48,107 @@ if not df.empty:
     precio_act = float(df['Close'].iloc[-1])
     rsi_act = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.8, 0.2], vertical_spacing=0.03)
+    # GRÁFICA MULTI-PANEL REDUCIDA
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                        row_heights=[0.5, 0.2, 0.3], vertical_spacing=0.03)
+    
+    # Velas + EMA
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='yellow', width=1), name="EMA 20"), row=1, col=1)
-    fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=10, b=10))
+    
+    # RSI
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='magenta', width=1), name="RSI"), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1, opacity=0.5)
+    fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1, opacity=0.5)
+    
+    # Volumen
+    colors_vol = ['#26a69a' if row['Close'] >= row['Open'] else '#ef5350' for _, row in df.iterrows()]
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors_vol, name="Volumen"), row=3, col=1)
+
+    fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=10, b=10), showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    # 5. ANÁLISIS IA MEJORADO
-    if st.button("⚖️ ANALIZAR Y CONTRASTAR FUENTES"):
-        with st.spinner('Procesando datos institucionales...'):
-            try:
-                ticker = yf.Ticker(activos[seleccion])
-                noticias = "\n".join([n.get('title', 'Noticia') for n in ticker.news[:5]]) if ticker.news else "Neutral."
-            except: noticias = "No disponibles."
+    # 5. BOTÓN DE ANÁLISIS DE ALTA PRECISIÓN
+    if st.button("⚖️ GENERAR ANÁLISIS DE CONFLUENCIA"):
+        with st.spinner('Evaluando Geopolítica, Bancos Centrales y Smart Money...'):
+            ticker = yf.Ticker(activos[seleccion])
+            noticias = "\n".join([n.get('title', '') for n in ticker.news[:3]])
             
-            prompt = f"""Analista Senior. Activo: {seleccion} a {precio_act}. RSI: {rsi_act:.2f}. Noticias: {noticias}.
-            Proporciona un informe con estos puntos exactos (usa las etiquetas en mayúsculas):
-            RESUMEN: (Una frase)
-            ORDEN: (COMPRA, VENTA o ESPERAR)
-            NIVELES: (Entrada, SL y TP)
-            INSTITUCIONAL: (Flujo de dinero)
-            PRENSA: (Contraste noticias vs técnica)
-            MACRO: (Geopolítica)
-            LOTES: (Sugerencia)"""
+            prompt = f"""Analista Senior Global Macro. Activo: {seleccion} a {precio_act}. RSI: {rsi_act:.2f}. Noticias: {noticias}.
+            Evalúa: Contexto histórico, Geopolítica, FED/Bancos Centrales, Posicionamiento de Grandes Inversores.
             
-            resp = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "system", "content": "Trader institucional preciso."}, {"role": "user", "content": prompt}]
-            )
+            Responde con este formato estricto:
+            PROBABILIDAD: [X]%
+            PERIODO: [Corto/Medio/Largo]
+            ACCION: [COMPRA/VENTA/ESPERAR]
+            TIEMPO: [Mercado/Orden Pendiente]
+            LOTES: [Basado en {st.session_state.wallet} USD y perfil {perfil}]
+            ENTRADA: [Precio]
+            TP: [Precio]
+            SL: [Precio]
+            CONFLUENCIA: [Resumen de por qué los datos macro y técnicos coinciden]"""
+            
+            resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
             res_ia = resp.choices[0].message.content
 
-            # Extractor Flexible (Busca por palabras clave)
-            def find_text(keyword):
-                # Busca la palabra clave y captura todo hasta la siguiente etiqueta o el final
-                match = re.search(rf"{keyword}.*?:\s*(.*?)(?=\n[A-Z]+|$)", res_ia, re.S | re.I)
-                return match.group(1).strip() if match else "Información en el informe general."
+            def ext(tag):
+                match = re.search(rf"{tag}:\s*(.*?)(?=\n[A-ZÁÉÍÓÚ]+:|$)", res_ia, re.S | re.I)
+                return match.group(1).strip() if match else "---"
 
             st.session_state.señal_actual = {
-                "resumen": find_text("RESUMEN"),
-                "orden": find_text("ORDEN"),
-                "niveles": find_text("NIVELES"),
-                "inst": find_text("INSTITUCIONAL"),
-                "prensa": find_text("PRENSA"),
-                "macro": find_text("MACRO"),
-                "lotes": find_text("LOTES"),
-                "raw": res_ia
+                "prob": ext("PROBABILIDAD"), "periodo": ext("PERIODO"), "accion": ext("ACCION"), 
+                "tiempo": ext("TIEMPO"), "lotes": ext("LOTES"), "entrada": ext("ENTRADA"), 
+                "tp": ext("TP"), "sl": ext("SL"), "confluencia": ext("CONFLUENCIA")
             }
             st.rerun()
 
-    # 6. INFORME VISUAL
+    # 6. FICHA TÉCNICA CON PROBABILIDAD (TABLA)
     if st.session_state.señal_actual:
         s = st.session_state.señal_actual
-        ord_val = s['orden'].upper()
-        color = "green" if "COMPRA" in ord_val else "red" if "VENTA" in ord_val else "orange"
+        prob_val = int(s['prob'].replace('%','')) if '%' in s['prob'] else 50
         
-        with st.container(border=True):
-            st.markdown(f"### 🛡️ Decisión: :{color}[{s['orden']}]")
-            st.markdown(f"**💡 {s['resumen']}**")
-            
-            c1, c2 = st.columns(2)
-            if "ESPERAR" not in ord_val:
-                if c1.button("🚀 EJECUTAR OPERACIÓN"):
-                    st.session_state.cartera_abierta.append({
-                        "id": datetime.now().strftime("%H%M%S"), "activo": seleccion, 
-                        "entrada": precio_act, "tipo": ord_val, "hora": datetime.now().strftime("%H:%M")
-                    })
-                    st.session_state.señal_actual = None
-                    st.rerun()
-            if c2.button("🗑️ DESCARTAR"):
+        st.subheader("📋 Ficha de Inteligencia de Mercado")
+        
+        # Indicador visual de probabilidad
+        st.progress(prob_val / 100, text=f"Probabilidad de Éxito: {s['prob']}")
+        
+        tabla_data = {
+            "Factor": ["Probabilidad", "Periodo", "Acción", "Tipo", "Lotes", "Entrada", "Take Profit", "Stop Loss"],
+            "Valor": [s['prob'], s['periodo'], s['accion'], s['tiempo'], s['lotes'], s['entrada'], s['tp'], s['sl']]
+        }
+        st.table(pd.DataFrame(tabla_data).set_index("Factor"))
+        
+        with st.expander("🔍 Ver Informe de Confluencia (Macro + Geopolítica)"):
+            st.write(s['confluencia'])
+        
+        c1, c2 = st.columns(2)
+        if "ESPERAR" not in s['accion'].upper():
+            if c1.button("🚀 ACEPTAR OPERACIÓN"):
+                st.session_state.cartera_abierta.append({
+                    "id": datetime.now().strftime("%H%M%S"), "activo": seleccion, 
+                    "entrada": s['entrada'], "lotes": s['lotes'], "tipo": s['accion'], "prob": s['prob']
+                })
                 st.session_state.señal_actual = None
                 st.rerun()
+        if c2.button("🗑️ RECHAZAR"):
+            st.session_state.señal_actual = None
+            st.rerun()
 
-            with st.expander("🔍 Informe Detallado"):
-                st.info(s['raw']) # Mostramos el texto crudo si la extracción falla, pero ahora está blindado
-
-    # 7. CARTERA
-    if st.session_state.cartera_abierta:
-        st.divider()
-        st.subheader("💼 Posiciones en Curso")
-        for i, pos in enumerate(st.session_state.cartera_abierta):
-            with st.expander(f"🟢 {pos['activo']} | {pos['tipo']} | In: {pos['entrada']}", expanded=True):
-                col1, col2 = st.columns([3, 1])
-                pnl = col1.number_input(f"Profit/Loss ($)", value=0.0, key=f"p_{pos['id']}")
-                if col2.button(f"Cerrar", key=f"b_{pos['id']}"):
-                    st.session_state.wallet += pnl
-                    st.session_state.historial.append({"Activo": pos['activo'], "PnL": pnl, "Fecha": pos['hora']})
-                    st.session_state.cartera_abierta.pop(i)
-                    st.rerun()
+# 7. VENTANA RESUMEN DE OPERACIONES (CARTERA)
+st.divider()
+st.subheader("💼 Posiciones Abiertas")
+if st.session_state.cartera_abierta:
+    df_car = pd.DataFrame(st.session_state.cartera_abierta)
+    st.dataframe(df_car[['activo', 'tipo', 'entrada', 'lotes', 'prob']], use_container_width=True)
+    
+    for i, pos in enumerate(st.session_state.cartera_abierta):
+        with st.expander(f"Gestionar {pos['activo']} ({pos['tipo']})"):
+            c_p1, c_p2 = st.columns([2, 1])
+            pnl_v = c_p1.number_input(f"Resultado P/L ($)", value=0.0, key=f"pnl_{pos['id']}")
+            if c_p2.button(f"Cerrar Posición", key=f"btn_{pos['id']}"):
+                st.session_state.wallet += pnl_v
+                st.session_state.historial.append({"Activo": pos['activo'], "PnL": pnl_v, "Prob": pos['prob']})
+                st.session_state.cartera_abierta.pop(i)
+                st.rerun()
+else:
+    st.info("Sin posiciones activas.")
