@@ -9,14 +9,16 @@ from datetime import datetime
 import os
 
 # --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V45", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V47", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
 
 def guardar_datos(lista, archivo):
     if lista: pd.DataFrame(lista).to_csv(archivo, index=False)
-    elif os.path.exists(archivo): os.remove(archivo)
+    elif os.path.exists(archivo): 
+        try: os.remove(archivo)
+        except: pass
 
 def cargar_datos(archivo):
     if os.path.exists(archivo):
@@ -24,6 +26,7 @@ def cargar_datos(archivo):
         except: return []
     return []
 
+# Inicialización de estados
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = cargar_datos(CSV_FILE)
 if 'historial' not in st.session_state: st.session_state.historial = cargar_datos(HIST_FILE)
@@ -32,7 +35,29 @@ if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = Non
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. MOTOR DE DATOS Y ANÁLISIS ---
+# --- 2. MOTOR DE CÁLCULO DE CUENTA (RIESGO Y MARGEN) ---
+def calcular_metricas():
+    # Estimamos el valor nominal total de las posiciones abiertas
+    # Margen requerido: 5% del nominal (Apalancamiento 1:20)
+    nominal_total = 0
+    for p in st.session_state.cartera_abierta:
+        try: nominal_total += float(p.get('valor_nominal', 0))
+        except: pass
+    
+    margen_usado = nominal_total * 0.05
+    margen_disponible = st.session_state.wallet - margen_usado
+    
+    # Win Rate e Historial
+    win_rate = 50.0
+    if st.session_state.historial:
+        ganadas = len([h for h in st.session_state.historial if float(h['pnl']) > 0])
+        win_rate = (ganadas / len(st.session_state.historial)) * 100
+    
+    return margen_usado, margen_disponible, win_rate
+
+m_usado, m_disponible, wr_actual = calcular_metricas()
+
+# --- 3. MOTOR DE DATOS E IA ---
 @st.cache_data(ttl=60)
 def obtener_datos(ticker, periodo, intervalo):
     try:
@@ -46,41 +71,36 @@ def auto_analizar(t, n):
     try:
         df_t = obtener_datos(t, "5d", "15m")
         if df_t.empty: return None
-        rsi_val = ta.rsi(df_t['Close']).iloc[-1]
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"""Analiza {n} a {p_actual}. RSI: {rsi_val:.1f}.
-        Responde exclusivamente con este formato para 3 estrategias (INTRA, MEDIO, LARGO):
-        INTRA: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
-        MEDIO: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
-        LARGO: Probabilidad | Accion (COMPRA/VENTA) | Lotes | Entrada | TP | SL | Nominal
-        Usa '|' como separador único."""
+        prompt = f"""Analiza {n} a {p_actual}. WinRate actual: {wr_actual:.1f}%.
+        Responde estrictamente en este formato (3 líneas):
+        INTRA: Probabilidad% | Accion | Lotes | Entrada | TP | SL | Nominal
+        MEDIO: Probabilidad% | Accion | Lotes | Entrada | TP | SL | Nominal
+        LARGO: Probabilidad% | Accion | Lotes | Entrada | TP | SL | Nominal"""
         
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0)
         res_ia = resp.choices[0].message.content
         
-        def extraer_limpio(tag):
+        def extraer(tag):
             for line in res_ia.split('\n'):
                 if tag in line.upper():
-                    clean_line = line.replace('*', '').replace('[', '').replace(']', '')
-                    parts = clean_line.split(':')[-1].split('|')
+                    parts = line.replace('*','').split(':')[-1].split('|')
                     if len(parts) >= 7: return [p.strip() for p in parts]
-            return ["N/A", "ESPERAR", "0", "0", "0", "0", "0"]
+            return ["---", "ESPERAR", "0.10", str(p_actual), "0", "0", "0"]
 
-        return {"intra": extraer_limpio("INTRA"), "medio": extraer_limpio("MEDIO"), "largo": extraer_limpio("LARGO"), "moneda": moneda}
+        return {"intra": extraer("INTRA"), "medio": extraer("MEDIO"), "largo": extraer("LARGO"), "moneda": moneda, "p_actual": p_actual}
     except: return None
 
-# --- 3. INTERFAZ: CATEGORÍAS ---
-st.markdown('<div style="background-color:#ffffff; padding:15px; border-radius:10px; border:2px solid #268bd2; margin-bottom:20px;"><h3>🚀 Radar VIP</h3>', unsafe_allow_html=True)
-vip = {"🏙️ US100": "NQ=F", "📀 ORO": "GC=F", "💡 NVDA": "NVDA", "₿ BTC": "BTC-USD"}
-cv = st.columns(4)
-for i, (n, t) in enumerate(vip.items()):
-    if cv[i].button(f"{n}", key=f"vip_{t}", use_container_width=True):
-        st.session_state.activo_sel, st.session_state.ticker_sel = n, t
-        st.session_state.analisis_auto = auto_analizar(t, n)
-        st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
+# --- 4. INTERFAZ: CABECERA Y CATEGORÍAS ---
+st.markdown(f"""
+    <div style="background-color:#1e212b; padding:15px; border-radius:10px; color:white; border-left: 5px solid #268bd2;">
+        <span style="font-size:1.2em;">💰 <b>Margen Disponible: {m_disponible:,.2f} €</b></span> 
+        <span style="margin-left:30px; color:#00ff00;">🎯 WinRate: {wr_actual:.1f}%</span>
+        <span style="margin-left:30px; color:#ff8c00;">⚠️ Margen Usado: {m_usado:,.2f} €</span>
+    </div>
+""", unsafe_allow_html=True)
 
 t_main = st.tabs(["📈 Stocks", "📊 Indices", "🏗️ Material", "💱 Divisas"])
 
@@ -102,121 +122,106 @@ with t_main[0]: # STOCKS
     with s6: grid({"👕 Inditex":"ITX.MC", "⚡ Iberdrola":"IBE.MC", "🏦 Santander":"SAN.MC", "🏦 BBVA":"BBVA.MC"}, "esp")
 
 with t_main[1]: # INDICES
-    i1, i2, i3 = st.tabs(["🇺🇸 EE.UU", "🇪🇺 Europa", "🌏 Asia"])
+    i1, i2 = st.tabs(["🇺🇸 EE.UU", "🇪🇺 Europa"])
     with i1: grid({"🇺🇸 US100":"NQ=F", "📈 S&P 500":"ES=F", "🏭 Dow Jones":"YM=F"}, "idx_usa")
     with i2: grid({"🇩🇪 DAX 40":"^GDAXI", "🇪🇸 IBEX 35":"^IBEX", "🇫🇷 CAC 40":"^FCHI"}, "idx_eu")
-    with i3: grid({"🇯🇵 Nikkei":"^N225", "🇭🇰 Hang Seng":"^HSI"}, "idx_as")
 
 with t_main[2]: # MATERIAL
-    m1, m2, m3 = st.tabs(["🥇 Metales", "🛢️ Energía", "🌾 Agro"])
-    with m1: grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🥉 Cobre":"HG=F"}, "mat_met")
-    with m2: grid({"🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat_ene")
-    with m3: grid({"🌾 Trigo":"ZW=F", "☕ Café":"KC=F", "🌽 Maíz":"ZC=F"}, "mat_agr")
+    grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat")
 
-with t_main[3]: # DIVISAS
-    d1, d2 = st.tabs(["💵 Principales", "🪙 Cripto"])
-    with d1: grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X"}, "div_maj")
-    with d2: grid({"₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD", "🐕 Doge":"DOGE-USD"}, "div_cry")
+with t_main[3]: # DIVISAS (Divisas)
+    grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD"}, "div")
 
-# --- 4. ÁREA DE GRÁFICO Y MÉTRICAS ---
+# --- 5. GRÁFICO Y MÉTRICAS SUPERIORES ---
 st.divider()
-c_graf, c_sel = st.columns([8, 2])
-with c_sel:
-    franja = st.selectbox("Franja", ["1h", "6h", "12h", "1d", "2d", "3d", "4d"], index=3)
-    config_map = {"1h":{"p":"1d","i":"1m"},"6h":{"p":"1d","i":"2m"},"12h":{"p":"1d","i":"5m"},"1d":{"p":"1d","i":"5m"},"2d":{"p":"2d","i":"15m"},"3d":{"p":"3d","i":"15m"},"4d":{"p":"5d","i":"30m"}}
-
-df = obtener_datos(st.session_state.ticker_sel, config_map[franja]['p'], config_map[franja]['i'])
-
+df = obtener_datos(st.session_state.ticker_sel, "5d", "15m")
 if not df.empty:
-    # --- CÁLCULOS TÉCNICOS ---
     p_actual = df['Close'].iloc[-1]
-    p_max, p_min = df['High'].max(), df['Low'].min()
-    res_calc, sop_calc = df['High'].tail(30).max(), df['Low'].tail(30).min()
-    vol_medio = df['Volume'].mean()
-    atr = ta.atr(df['High'], df['Low'], df['Close'], length=14).iloc[-1]
-    moneda_simb = "€" if any(x in st.session_state.ticker_sel for x in [".MC", "GDAXI", "IBEX"]) else "$"
+    # Métricas de cabecera de gráfico
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Precio", f"{p_actual:,.2f}")
+    m2.metric("Máximo", f"{df['High'].max():,.2f}")
+    m3.metric("Mínimo", f"{df['Low'].min():,.2f}")
+    m4.metric("Soporte", f"{df['Low'].tail(30).min():,.2f}")
+    m5.metric("Resist.", f"{df['High'].tail(30).max():,.2f}")
+    m6.metric("ATR", f"{ta.atr(df['High'], df['Low'], df['Close']).iloc[-1]:,.2f}")
 
-    # MÉTRICAS SUPERIORES (7 métricas)
-    m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
-    m1.metric("Actual", f"{p_actual:,.2f}")
-    m2.metric("Máximo", f"{p_max:,.2f}")
-    m3.metric("Mínimo", f"{p_min:,.2f}")
-    m4.metric("Soporte", f"{sop_calc:,.2f}")
-    m5.metric("Resist.", f"{res_calc:,.2f}")
-    m6.metric("Volat. (ATR)", f"{atr:,.2f}")
-    m7.metric("Vol. Medio", f"{int(vol_medio):,}")
-
-    # --- LÓGICA DE COLOR DE VOLUMEN ---
+    # Gráfico con Volumen Color-Coded
     df['VolColor'] = ['#00c805' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#ff3b30' for i in range(len(df))]
-
-    # DIBUJO DEL GRÁFICO PROFESIONAL
-    df['EMA20'] = ta.ema(df['Close'], length=20)
-    df['RSI'] = ta.rsi(df['Close'], length=14)
-    
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                        row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03)
-    
-    # 1. Velas y EMA
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#FF8C00', width=2), name="EMA 20"), row=1, col=1)
-    fig.add_hline(y=res_calc, line_dash="dash", line_color="red", opacity=0.4, row=1, col=1)
-    fig.add_hline(y=sop_calc, line_dash="dash", line_color="green", opacity=0.4, row=1, col=1)
-
-    # 2. Volumen con colores dinámicos
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df['VolColor'], name="Volumen", opacity=0.8), row=2, col=1)
-
-    # 3. RSI
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=3, col=1)
-    
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=650, xaxis_rangeslider_visible=False, margin=dict(t=5, b=5))
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df['VolColor'], name="Volumen"), row=2, col=1)
+    fig.update_layout(height=500, xaxis_rangeslider_visible=False, template="plotly_dark", margin=dict(t=10,b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. PLAN ESTRATÉGICO ---
+# --- 6. PLAN ESTRATÉGICO CON EJECUCIÓN MANUAL ---
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
-    cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
+    cols_ia = st.columns(3)
+    
     for i, tag in enumerate(["intra", "medio", "largo"]):
         s = res[tag]
         es_compra = "COMPRA" in s[1].upper()
-        es_venta = "VENTA" in s[1].upper()
-        bg_color = "#e8f5e9" if es_compra else "#ffebee" if es_venta else "#ffffff"
-        border_color = "#4caf50" if es_compra else "#f44336" if es_venta else "#ddd"
-        text_color = "#2e7d32" if es_compra else "#c62828" if es_venta else "#333"
+        bg_color = "#e8f5e9" if es_compra else "#ffebee"
+        border_color = "#4caf50" if es_compra else "#f44336"
 
         with cols_ia[i]:
             st.markdown(f"""
-                <div style="background-color:{bg_color}; padding:15px; border-radius:12px; border:2px solid {border_color}; min-height:190px;">
-                    <h4 style="text-align:center; color:#333; margin:0; font-size:1.1em;">{tag.upper()} ({s[0]})</h4>
-                    <p style="text-align:center; font-weight:bold; font-size:1.3em; color:{text_color}; margin:8px;">{s[1]}</p>
-                    <p style="margin:2px; font-size:0.9em; color:#000;">📦 Lotes: <b>{s[2]}</b> | In: <b>{s[3]}</b></p>
-                    <p style="margin:2px; font-size:0.9em; color:#000;">🏁 TP: <span style="color:green; font-weight:bold;">{s[4]}</span> | 🛡️ SL: <span style="color:red; font-weight:bold;">{s[5]}</span></p>
-                    <p style="font-size:0.8em; color:grey; margin-top:5px;">Nominal: {s[6]} {res['moneda']}</p>
+                <div style="background-color:{bg_color}; padding:15px; border-radius:12px; border:2px solid {border_color}; min-height:180px;">
+                    <h4 style="margin:0;">{tag.upper()} <span style="float:right; color:blue;">🎯 {s[0]}</span></h4>
+                    <p style="text-align:center; font-weight:bold; font-size:1.2em; color:#333; margin:10px 0;">{s[1]}</p>
+                    <p style="font-size:0.9em; margin:2px;">In Sugerido: <b>{s[3]}</b> | Lotes: <b>{s[2]}</b></p>
+                    <p style="font-size:0.8em; color:grey;">Riesgo sugerido según WinRate: {(wr_actual/100)*2:.1f}%</p>
                 </div>
             """, unsafe_allow_html=True)
-            if st.button(f"Ejecutar {tag.title()}", key=f"op_{tag}"):
-                st.session_state.cartera_abierta.append({
-                    "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
-                    "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], 
-                    "valor_nominal": s[6], "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
-                })
-                guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
+            
+            with st.popover(f"🚀 Ejecutar {tag.upper()}", use_container_width=True):
+                lotes_final = st.number_input("Ajustar Lotes", value=float(s[2]), step=0.01, key=f"l_{tag}")
+                precio_final = st.number_input("Precio Entrada Real", value=float(s[3]), key=f"p_{tag}")
+                if st.button("Confirmar Operación", key=f"conf_{tag}", use_container_width=True):
+                    # Valor nominal = Lotes * Precio (Simplificado)
+                    val_nominal = lotes_final * precio_final
+                    st.session_state.cartera_abierta.append({
+                        "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
+                        "tipo": s[1], "lotes": lotes_final, "entrada": precio_final, "tp": s[4], "sl": s[5], 
+                        "valor_nominal": val_nominal, "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
+                    })
+                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE)
+                    st.rerun()
 
-# --- 6. SIDEBAR ---
+# --- 7. SIDEBAR: TERMINAL Y CIERRE ---
 with st.sidebar:
     st.header("🏢 Terminal Jacar")
     st.metric("Balance Equity", f"{st.session_state.wallet:,.2f} €")
+    st.divider()
+    
     tab_side = st.tabs(["💼 Abiertas", "📜 Histórico"])
+    
     with tab_side[0]:
+        # Balance de operaciones en curso
+        pnl_total_curso = 0
         for i, pos in enumerate(list(st.session_state.cartera_abierta)):
-            with st.expander(f"📌 {pos['activo']} ({pos['tipo']})"):
-                pnl = st.number_input("PnL (€)", key=f"pnl_{pos['id']}", value=0.0)
-                if st.button("Cerrar", key=f"c_{pos['id']}", use_container_width=True):
-                    st.session_state.historial.append({"fecha": datetime.now().strftime("%d/%m %H:%M"), "activo": pos['activo'], "pnl": pnl})
-                    st.session_state.wallet += pnl; st.session_state.cartera_abierta.pop(i)
-                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE); guardar_datos(st.session_state.historial, HIST_FILE); st.rerun()
+            with st.expander(f"📌 {pos['activo']} ({pos['lotes']} L)"):
+                p_cierre_real = st.number_input("Precio Cierre", value=float(pos['entrada']), key=f"out_{pos['id']}")
+                
+                # Cálculo PnL Real
+                es_buy = "COMPRA" in pos['tipo'].upper()
+                pnl_op = (p_cierre_real - pos['entrada']) * pos['lotes'] * 100 if es_buy else (pos['entrada'] - p_cierre_real) * pos['lotes'] * 100
+                pnl_total_curso += pnl_op
+                
+                st.write(f"PnL: **{pnl_op:,.2f} {pos.get('moneda', '€')}**")
+                if st.button("Cerrar Posición", key=f"close_{pos['id']}", use_container_width=True):
+                    st.session_state.historial.append({"fecha": datetime.now().strftime("%d/%m %H:%M"), "activo": pos['activo'], "pnl": pnl_op})
+                    st.session_state.wallet += pnl_op
+                    st.session_state.cartera_abierta.pop(i)
+                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE); guardar_datos(st.session_state.historial, HIST_FILE)
+                    st.rerun()
+        
+        st.markdown(f"**PnL Total en Curso:** `{pnl_total_curso:,.2f} €`")
+
     with tab_side[1]:
         if st.session_state.historial:
             st.dataframe(pd.DataFrame(st.session_state.historial).iloc[::-1], hide_index=True)
-            if st.button("Limpiar Histórico"): 
+            if st.button("Limpiar Historial"): 
                 st.session_state.historial = []; guardar_datos([], HIST_FILE); st.rerun()
