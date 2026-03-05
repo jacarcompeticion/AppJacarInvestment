@@ -11,7 +11,6 @@ import re
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Jacar Pro Terminal", layout="wide")
 
-# Inicialización segura de estados
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'historial' not in st.session_state: st.session_state.historial = []
 if 'señal_actual' not in st.session_state: st.session_state.señal_actual = None
@@ -49,72 +48,70 @@ if not df.empty:
     precio_act = float(df['Close'].iloc[-1])
     rsi_act = float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0
 
-    # Gráfico
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.8, 0.2], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='yellow', width=1), name="EMA 20"), row=1, col=1)
-    fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=10, b=10))
+    fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, margin=dict(l=10, r=50, t=10, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-    # 5. ANÁLISIS IA (Con corrección de Noticias)
+    # 5. ANÁLISIS IA MEJORADO
     if st.button("⚖️ ANALIZAR Y CONTRASTAR FUENTES"):
-        with st.spinner('Contrastando Bloomberg, Reuters y Flujos de Capital...'):
+        with st.spinner('Procesando datos institucionales...'):
             try:
                 ticker = yf.Ticker(activos[seleccion])
-                raw_news = ticker.news
-                # Extracción segura de títulos de noticias
-                noticias_lista = []
-                if raw_news:
-                    for n in raw_news[:5]:
-                        title = n.get('title') or n.get('heading') or "Noticia sin título"
-                        noticias_lista.append(title)
-                noticias = "\n".join(noticias_lista) if noticias_lista else "Sin noticias relevantes hoy."
-            except:
-                noticias = "Fuentes externas temporalmente no disponibles."
+                noticias = "\n".join([n.get('title', 'Noticia') for n in ticker.news[:5]]) if ticker.news else "Neutral."
+            except: noticias = "No disponibles."
             
             prompt = f"""Analista Senior. Activo: {seleccion} a {precio_act}. RSI: {rsi_act:.2f}. Noticias: {noticias}.
-            Responde con este formato exacto:
-            RESUMEN: [Breve]
-            ORDEN: [COMPRA, VENTA o ESPERAR]
-            NIVELES: [Entrada, SL, TP]
-            DETALLE INSTITUCIONAL: [Smart Money]
-            DETALLE PRENSA: [Contraste]
-            DETALLE MACRO: [Geopolítica]
-            LOTES: [Sugerencia]"""
+            Proporciona un informe con estos puntos exactos (usa las etiquetas en mayúsculas):
+            RESUMEN: (Una frase)
+            ORDEN: (COMPRA, VENTA o ESPERAR)
+            NIVELES: (Entrada, SL y TP)
+            INSTITUCIONAL: (Flujo de dinero)
+            PRENSA: (Contraste noticias vs técnica)
+            MACRO: (Geopolítica)
+            LOTES: (Sugerencia)"""
             
             resp = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": "Trader institucional."}, {"role": "user", "content": prompt}]
+                messages=[{"role": "system", "content": "Trader institucional preciso."}, {"role": "user", "content": prompt}]
             )
             res_ia = resp.choices[0].message.content
 
-            def ext(tag):
-                match = re.search(rf"{tag}:\s*(.*?)(?=\n[A-ZÁÉÍÓÚ]+:|$)", res_ia, re.S | re.I)
-                return match.group(1).strip() if match else "Información no disponible"
+            # Extractor Flexible (Busca por palabras clave)
+            def find_text(keyword):
+                # Busca la palabra clave y captura todo hasta la siguiente etiqueta o el final
+                match = re.search(rf"{keyword}.*?:\s*(.*?)(?=\n[A-Z]+|$)", res_ia, re.S | re.I)
+                return match.group(1).strip() if match else "Información en el informe general."
 
             st.session_state.señal_actual = {
-                "resumen": ext("RESUMEN"), "orden": ext("ORDEN"), "niveles": ext("NIVELES"),
-                "inst": ext("DETALLE INSTITUCIONAL"), "prensa": ext("DETALLE PRENSA"),
-                "macro": ext("DETALLE MACRO"), "lotes": ext("LOTES")
+                "resumen": find_text("RESUMEN"),
+                "orden": find_text("ORDEN"),
+                "niveles": find_text("NIVELES"),
+                "inst": find_text("INSTITUCIONAL"),
+                "prensa": find_text("PRENSA"),
+                "macro": find_text("MACRO"),
+                "lotes": find_text("LOTES"),
+                "raw": res_ia
             }
             st.rerun()
 
-    # 6. INFORME
+    # 6. INFORME VISUAL
     if st.session_state.señal_actual:
         s = st.session_state.señal_actual
-        orden_txt = s.get('orden', 'ESPERAR').upper()
-        color = "green" if "COMPRA" in orden_txt else "red" if "VENTA" in orden_txt else "orange"
+        ord_val = s['orden'].upper()
+        color = "green" if "COMPRA" in ord_val else "red" if "VENTA" in ord_val else "orange"
         
         with st.container(border=True):
-            st.markdown(f"### 🛡️ Decisión: :{color}[{orden_txt}]")
-            st.markdown(f"**💡 {s.get('resumen')}**")
+            st.markdown(f"### 🛡️ Decisión: :{color}[{s['orden']}]")
+            st.markdown(f"**💡 {s['resumen']}**")
             
             c1, c2 = st.columns(2)
-            if "ESPERAR" not in orden_txt:
+            if "ESPERAR" not in ord_val:
                 if c1.button("🚀 EJECUTAR OPERACIÓN"):
                     st.session_state.cartera_abierta.append({
                         "id": datetime.now().strftime("%H%M%S"), "activo": seleccion, 
-                        "entrada": precio_act, "tipo": orden_txt, "hora": datetime.now().strftime("%H:%M")
+                        "entrada": precio_act, "tipo": ord_val, "hora": datetime.now().strftime("%H:%M")
                     })
                     st.session_state.señal_actual = None
                     st.rerun()
@@ -122,11 +119,8 @@ if not df.empty:
                 st.session_state.señal_actual = None
                 st.rerun()
 
-            with st.expander("🔍 Informe de Inteligencia Detallado"):
-                st.markdown(f"**📍 Niveles:** {s.get('niveles')}")
-                st.markdown(f"**💼 Smart Money:** {s.get('inst')}")
-                st.markdown(f"**📰 Prensa vs Técnica:** {s.get('prensa')}")
-                st.markdown(f"**🌍 Geopolítica:** {s.get('macro')}")
+            with st.expander("🔍 Informe Detallado"):
+                st.info(s['raw']) # Mostramos el texto crudo si la extracción falla, pero ahora está blindado
 
     # 7. CARTERA
     if st.session_state.cartera_abierta:
@@ -135,7 +129,7 @@ if not df.empty:
         for i, pos in enumerate(st.session_state.cartera_abierta):
             with st.expander(f"🟢 {pos['activo']} | {pos['tipo']} | In: {pos['entrada']}", expanded=True):
                 col1, col2 = st.columns([3, 1])
-                pnl = col1.number_input(f"Profit/Loss Final ($)", value=0.0, key=f"p_{pos['id']}")
+                pnl = col1.number_input(f"Profit/Loss ($)", value=0.0, key=f"p_{pos['id']}")
                 if col2.button(f"Cerrar", key=f"b_{pos['id']}"):
                     st.session_state.wallet += pnl
                     st.session_state.historial.append({"Activo": pos['activo'], "PnL": pnl, "Fecha": pos['hora']})
