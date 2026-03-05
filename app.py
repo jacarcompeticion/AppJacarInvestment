@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="Jacar Pro V30", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V31", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 
@@ -43,7 +43,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. MOTOR DE ANÁLISIS ATR ---
+# --- 3. MOTOR DE ANÁLISIS ---
 def auto_analizar(t, n):
     try:
         df_t = yf.download(t, period="60d", interval="1h", progress=False)
@@ -56,13 +56,7 @@ def auto_analizar(t, n):
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"""Actúa como Trader Senior. Activo: {n}. Precio: {p_actual}. RSI: {rsi_val:.1f}. ATR: {atr:.4f}.
-        Genera 3 estrategias: INTRA (1x ATR), MEDIO (3x ATR), LARGO (10x ATR).
-        Responde estrictamente:
-        INTRA: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]
-        MEDIO: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]
-        LARGO: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"""
-        
+        prompt = f"Trader Senior. Activo: {n}. Precio: {p_actual}. RSI: {rsi_val:.1f}. ATR: {atr:.4f}. Genera 3 señales DIFERENTES (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         res_ia = resp.choices[0].message.content
         
@@ -72,7 +66,6 @@ def auto_analizar(t, n):
                 parts = [p.strip().replace('[','').replace(']','') for p in m.group(1).split('|')]
                 if len(parts) >= 7: return parts
             return ["---","---","0","0","0","0","0"]
-        
         return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO"), "moneda": moneda}
     except: return None
 
@@ -100,10 +93,10 @@ def render_grid(d):
 
 with t_acc:
     s_acc = st.tabs(["Tecnología", "Energía", "Banca", "Consumo"])
-    with s_acc[0]: render_grid({"NVDA":"NVDA", "Apple":"AAPL", "Tesla":"TSLA", "MSFT":"MSFT"})
+    with s_acc[0]: render_grid({"NVDA":"NVDA", "Apple":"AAPL", "Tesla":"TSLA", "Google":"GOOGL"})
     with s_acc[1]: render_grid({"Iberdrola":"IBE.MC", "Repsol":"REP.MC", "Exxon":"XOM"})
     with s_acc[2]: render_grid({"Santander":"SAN.MC", "BBVA":"BBVA.MC", "JPMorgan":"JPM"})
-    with s_acc[3]: render_grid({"Amazon":"AMZN", "Inditex":"ITX.MC", "Coca-Cola":"KO"})
+    with s_acc[3]: render_grid({"Amazon":"AMZN", "Inditex":"ITX.MC", "Walmart":"WMT"})
 
 with t_ind:
     s_ind = st.tabs(["Europa", "EE.UU", "Asia"])
@@ -120,37 +113,44 @@ with t_mat:
 with t_div:
     render_grid({"EUR/USD":"EURUSD=X", "GBP/USD":"GBPUSD=X", "USD/JPY":"JPY=X", "BTC/USD":"BTC-USD"})
 
-# --- 6. GRÁFICA CON FILTRO TEMPORAL ---
+# --- 6. GRÁFICA (CORREGIDA) ---
 st.divider()
-c1, c2 = st.columns([2, 8])
-with c1:
-    st.subheader("📊 Gráfica")
-    periodo = st.selectbox("Rango de tiempo", ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "Max"], index=2)
+st.subheader(f"📊 Gráfico de Análisis: {st.session_state.activo_sel}")
+
+# Selector de tiempo fuera del bloque condicional para que no desaparezca
+periodo_sel = st.select_slider("Rango Temporal", options=["1D", "5D", "1M", "6M", "1Y", "5Y"], value="1M")
+map_int = {"1D": "5m", "5D": "30m", "1M": "1h", "6M": "1d", "1Y": "1d", "5Y": "1wk"}
+
+df = yf.download(st.session_state.ticker_sel, period=periodo_sel.lower(), interval=map_int[periodo_sel], progress=False)
+
+if not df.empty:
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     
-    # Mapeo de periodos a intervalos compatibles con yfinance
-    mapping = {"1D": "5m", "5D": "30m", "1M": "1h", "6M": "1d", "YTD": "1d", "1Y": "1d", "5Y": "1wk", "Max": "1mo"}
-    intervalo = mapping[periodo]
+    # Calcular indicadores solo si hay datos suficentes
+    df['EMA20'] = ta.ema(df['Close'], length=20) if len(df) > 20 else df['Close']
+    df['RSI'] = ta.rsi(df['Close'], length=14) if len(df) > 14 else 50
 
-with c2:
-    df = yf.download(st.session_state.ticker_sel, period=periodo.lower(), interval=intervalo, progress=False)
-    if not df.empty:
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        df['EMA20'] = ta.ema(df['Close'], length=20)
-        df['RSI'] = ta.rsi(df['Close'], length=14)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+    
+    # Velas y EMA
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Velas"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#268bd2', width=1.5), name="EMA 20"), row=1, col=1)
+    
+    # RSI
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=2, col=1)
 
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#268bd2', width=2), name="EMA 20"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#6c71c4'), name="RSI"), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-        
-        fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=500, xaxis_rangeslider_visible=False, margin=dict(t=10, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("No se han podido cargar datos para este rango temporal. Prueba con uno mayor (ej: 1M).")
+
+
 
 # --- 7. ESTRATEGIAS ---
 if st.session_state.analisis_auto:
-    st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
+    st.subheader(f"🛡️ Señales Jacar: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
@@ -162,7 +162,7 @@ if st.session_state.analisis_auto:
                 <p>📦 Lotes: {s[2]} | Entrada: {s[3]} {res['moneda']}</p>
                 <p>🏁 TP: <span class="val-buy">{s[4]}</span> | 🛡️ SL: <span class="val-sell">{s[5]}</span></p>
             </div>""", unsafe_allow_html=True)
-            if st.button(f"Ejecutar {tag.title()}", key=f"op_{tag}"):
+            if st.button(f"Abrir {tag.title()}", key=f"op_{tag}"):
                 st.session_state.cartera_abierta.append({
                     "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
                     "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], 
@@ -190,7 +190,7 @@ with st.sidebar:
     st.divider()
     st.subheader("💼 Posiciones")
     for i, pos in enumerate(list(st.session_state.cartera_abierta)):
-        with st.expander(f"📌 {pos['activo']} ({pos['tipo']})", expanded=True):
+        with st.expander(f"📌 {pos['activo']} ({pos['tipo']})"):
             pnl = st.number_input("PnL (€)", key=f"pnl_{pos['id']}", value=0.0)
             if st.button("Cerrar", key=f"c_{pos['id']}", use_container_width=True):
                 st.session_state.wallet += pnl
