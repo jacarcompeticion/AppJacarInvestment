@@ -3,14 +3,13 @@ import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from openai import OpenAI
 from datetime import datetime
 import re
 import os
 
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Jacar Pro V24", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V25", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 
@@ -33,7 +32,7 @@ if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = Non
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. CSS PARA EL LOOK CREMA & WHITE ---
+# --- 2. CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #fdf6e3 !important; }
@@ -43,48 +42,46 @@ st.markdown("""
         margin-bottom: 15px; color: #586e75 !important;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
-    .panel-vip { background-color: #ffffff; border: 2px solid #268bd2; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
+    .alerta-roja { 
+        background-color: #ffcccc; color: #cc0000; padding: 10px; 
+        border-radius: 8px; border: 2px solid #ff0000; font-weight: bold; text-align: center;
+    }
     .val-buy { color: #859900 !important; font-weight: bold; }
     .val-sell { color: #dc322f !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. LÓGICA DE ANÁLISIS (CON FIX PARA EL ERROR DE RSI) ---
+# --- 3. LÓGICA DE ANÁLISIS ---
 def auto_analizar(t, n):
     try:
         df_t = yf.download(t, period="5d", interval="1h", progress=False)
         if df_t.empty: return None
         if isinstance(df_t.columns, pd.MultiIndex): df_t.columns = df_t.columns.get_level_values(0)
         
-        # FIX: Verificamos que haya datos para el RSI
-        rsi_series = ta.rsi(df_t['Close'], length=14)
-        rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
-        
-        adx_df = ta.adx(df_t['High'], df_t['Low'], df_t['Close'])
-        adx_val = adx_df['ADX_14'].iloc[-1] if adx_df is not None and not adx_df.empty else 20.0
-        
+        rsi = ta.rsi(df_t['Close']).iloc[-1] if ta.rsi(df_t['Close']) is not None else 50.0
         p = df_t['Close'].iloc[-1]
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"Analista. Activo: {n}. Precio: {p} {moneda}. RSI: {rsi_val:.1f}. ADX: {adx_val:.1f}. Genera 3 señales: [INTRA], [MEDIO], [LARGO]. Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"
+        prompt = f"Activo: {n}. Precio: {p}. RSI: {rsi:.1f}. Genera 3 señales para INTRA, MEDIO, LARGO. Formato EXACTO: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal EUR]"
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         res_ia = resp.choices[0].message.content
         
         def p_tag(tag):
             m = re.search(rf"{tag}:\s*(.*)", res_ia)
-            return [p.strip() for p in m.group(1).split('|')] if m else ["0%","N/A","0","0","0","0","0"]
+            if m:
+                parts = [p.strip() for p in m.group(1).split('|')]
+                if len(parts) >= 7: return parts
+            return ["0%","N/A","0","0","0","0","0"]
         
         return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO"), "moneda": moneda}
-    except Exception as e:
-        st.error(f"Error en análisis de {n}: {e}")
-        return None
+    except: return None
 
-# --- 4. RADAR VIP Y CATEGORÍAS ---
-st.markdown('<div class="panel-vip"><h3>🚀 Radar de Oportunidades VIP</h3>', unsafe_allow_html=True)
+# --- 4. CATEGORÍAS ACTUALIZADAS ---
 activos_dict = {
-    "Índices": {"Nasdaq": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI"},
-    "Acciones": {"NVDA": "NVDA", "Tesla": "TSLA", "Apple": "AAPL", "Iberdrola": "IBE.MC"},
-    "Materias/FX": {"Oro": "GC=F", "Brent": "BZ=F", "Bitcoin": "BTC-USD", "EUR/USD": "EURUSD=X"}
+    "Acciones": {"NVDA": "NVDA", "Tesla": "TSLA", "Apple": "AAPL", "Iberdrola": "IBE.MC", "Repsol": "REP.MC"},
+    "Indices": {"Nasdaq": "^IXIC", "S&P 500": "^SPX", "IBEX 35": "^IBEX", "DAX 40": "^GDAXI"},
+    "Material": {"Oro": "GC=F", "Plata": "SI=F", "Brent": "BZ=F", "Gas": "NG=F"},
+    "Divisas": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "Bitcoin": "BTC-USD"}
 }
 
 tabs = st.tabs(list(activos_dict.keys()))
@@ -96,19 +93,18 @@ for i, (cat, lista) in enumerate(activos_dict.items()):
                 st.session_state.activo_sel, st.session_state.ticker_sel = n, t
                 st.session_state.analisis_auto = auto_analizar(t, n)
                 st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 5. GRÁFICA ---
 df = yf.download(st.session_state.ticker_sel, period="5d", interval="1h", progress=False)
 if not df.empty:
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=400, xaxis_rangeslider_visible=False, margin=dict(t=0, b=0))
+    fig.update_layout(plot_bgcolor='#1e212b', paper_bgcolor='#fdf6e3', height=400, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. ESTRATEGIAS AUTOMÁTICAS (LAS 3 POSICIONES) ---
+# --- 6. ESTRATEGIAS ---
 if st.session_state.analisis_auto:
-    st.subheader(f"⚡ Estrategias Sugeridas: {st.session_state.activo_sel}")
+    st.subheader(f"📊 Estrategias: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
     res = st.session_state.analisis_auto
     for i, tag in enumerate(["intra", "medio", "largo"]):
@@ -116,12 +112,11 @@ if st.session_state.analisis_auto:
         with cols_ia[i]:
             st.markdown(f"""<div class="card-ia">
                 <h4 style="text-align:center;">{tag.upper()}</h4>
-                <p>🎯 Probabilidad: <b>{s[0]}</b></p>
-                <p>⚡ Acción: <b class="{'val-buy' if 'COMPRA' in s[1] else 'val-sell'}">{s[1]}</b></p>
+                <p>🎯 Prob: <b>{s[0]}</b> | Acción: <b class="{'val-buy' if 'COMPRA' in s[1] else 'val-sell'}">{s[1]}</b></p>
                 <p>📦 Lotes: {s[2]} | In: {s[3]} {res['moneda']}</p>
                 <p>🏁 TP: <span class="val-buy">{s[4]}</span> | 🛡️ SL: <span class="val-sell">{s[5]}</span></p>
             </div>""", unsafe_allow_html=True)
-            if st.button(f"Abrir {tag.capitalize()}", key=f"op_{tag}"):
+            if st.button(f"Ejecutar {tag.capitalize()}", key=f"op_{tag}"):
                 st.session_state.cartera_abierta.append({
                     "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
                     "tipo": s[1], "lotes": s[2], "entrada": s[3], "tp": s[4], "sl": s[5], 
@@ -130,22 +125,24 @@ if st.session_state.analisis_auto:
                 guardar_en_csv()
                 st.rerun()
 
-# --- 7. SIDEBAR: CONTROL FINANCIERO ---
+# --- 7. SIDEBAR CON ALERTA DE RIESGO ---
 with st.sidebar:
     st.header("🏢 Balance Jacar")
-    # Cálculo de margen
     v_total = sum([float(str(p['valor_nominal']).replace('EUR','').strip()) for p in st.session_state.cartera_abierta]) if st.session_state.cartera_abierta else 0
     margen = v_total / 20
+    porcentaje_margen = (margen / st.session_state.wallet) * 100
+    
     st.metric("Equity (EUR)", f"{st.session_state.wallet:,.2f} €")
-    st.write(f"**Margen Utilizado:** {margen:,.2f} €")
-    st.write(f"**Disponible:** {(st.session_state.wallet - margen):,.2f} €")
+    st.write(f"**Margen Utilizado:** {margen:,.2f} € ({porcentaje_margen:.1f}%)")
+    
+    if porcentaje_margen > 50:
+        st.markdown('<div class="alerta-roja">⚠️ RIESGO ALTO: MARGEN > 50%</div>', unsafe_allow_html=True)
     
     st.divider()
-    st.subheader("💼 Posiciones Abiertas")
+    st.subheader("💼 Posiciones")
     for i, pos in enumerate(st.session_state.cartera_abierta):
         with st.container(border=True):
             st.write(f"**{pos['activo']}** ({pos['tipo']})")
-            st.caption(f"In: {pos['entrada']} {pos.get('moneda','$')}")
             pnl = st.number_input("PnL (€)", key=f"pnl_{pos['id']}", value=0.0)
             if st.button("Cerrar", key=f"c_{pos['id']}", type="primary"):
                 st.session_state.wallet += pnl
