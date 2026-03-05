@@ -10,7 +10,7 @@ import re
 import os
 
 # --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="Jacar Pro V36", layout="wide", page_icon="🏦")
+st.set_page_config(page_title="Jacar Pro V37", layout="wide", page_icon="🏦")
 
 CSV_FILE = 'cartera_jacar.csv'
 
@@ -50,8 +50,13 @@ def auto_analizar(t, n):
         p_actual = float(df_t['Close'].iloc[-1])
         moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
 
-        prompt = f"Analiza {n} a {p_actual}. RSI:{rsi_val:.1f}. Genera 3 planes (INTRA, MEDIO, LARGO). Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal]"
-        resp = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}], temperature=0)
+        # PROMPT MEJORADO: Pedimos niveles de entrada lógicos según el horizonte temporal
+        prompt = f"""Analiza {n} a {p_actual}. RSI:{rsi_val:.1f}. 
+        Genera 3 estrategias (INTRA, MEDIO, LARGO). 
+        IMPORTANTE: Ajusta el precio de ENTRADA si es necesario para optimizar el ratio Riesgo/Beneficio (pueden ser órdenes LIMIT).
+        Formato: TAG: [Prob%]|[Accion]|[Lotes]|[Entrada]|[TP]|[SL]|[Nominal]"""
+        
+        resp = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}], temperature=0.2)
         res_ia = resp.choices[0].message.content
         
         def p_tag(tag):
@@ -64,7 +69,7 @@ def auto_analizar(t, n):
         return {"intra": p_tag("INTRA"), "medio": p_tag("MEDIO"), "largo": p_tag("LARGO"), "moneda": moneda}
     except: return None
 
-# --- 3. INTERFAZ: CATEGORÍAS Y SUBCATEGORÍAS ---
+# --- 3. INTERFAZ: CATEGORÍAS SEPARADAS ---
 st.markdown('<div style="background-color:#ffffff; padding:15px; border-radius:10px; border:2px solid #268bd2; margin-bottom:20px;"><h3>🚀 Radar VIP</h3>', unsafe_allow_html=True)
 vip = {"US100 (Nasdaq)": "NQ=F", "Oro": "GC=F", "NVDA": "NVDA", "Bitcoin": "BTC-USD"}
 cv = st.columns(4)
@@ -75,7 +80,8 @@ for i, (n, t) in enumerate(vip.items()):
         st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
 
-t_acc, t_ind, t_mat, t_div = st.tabs(["Stocks", "Indices", "Material", "Currencies"])
+# CATEGORÍAS PRINCIPALES
+t_acc, t_ind, t_mat, t_div = st.tabs(["Stocks", "Indices", "Material", "Divisas"])
 
 def grid(d):
     cols = st.columns(4)
@@ -86,23 +92,42 @@ def grid(d):
             st.rerun()
 
 with t_acc:
-    s1, s2, s3 = st.tabs(["Tecnología", "Energía/Banca", "Consumo/España"])
-    with s1: grid({"NVDA":"NVDA", "Apple":"AAPL", "Tesla":"TSLA", "Microsoft":"MSFT", "Google":"GOOGL", "Amazon":"AMZN"})
-    with s2: grid({"Exxon":"XOM", "Shell":"SHEL", "JPMorgan":"JPM", "Goldman":"GS", "Visa":"V"})
-    with s3: grid({"Inditex":"ITX.MC", "Iberdrola":"IBE.MC", "Santander":"SAN.MC", "BBVA":"BBVA.MC", "Walmart":"WMT", "Coca-Cola":"KO"})
+    # Subcategorías ahora totalmente separadas
+    st.subheader("Tecnología")
+    grid({"NVDA":"NVDA", "Apple":"AAPL", "Tesla":"TSLA", "Microsoft":"MSFT", "Google":"GOOGL", "Amazon":"AMZN"})
+    st.divider()
+    st.subheader("Energía")
+    grid({"Exxon":"XOM", "Shell":"SHEL", "Chevron":"CVX"})
+    st.divider()
+    st.subheader("Banca")
+    grid({"JPMorgan":"JPM", "Goldman":"GS", "Visa":"V", "Santander":"SAN.MC", "BBVA":"BBVA.MC"})
+    st.divider()
+    st.subheader("Consumo y España")
+    grid({"Inditex":"ITX.MC", "Iberdrola":"IBE.MC", "Walmart":"WMT", "Coca-Cola":"KO"})
 
 with t_ind:
-    i1, i2 = st.tabs(["EE.UU / Asia", "Europa"])
-    with i1: grid({"US100":"NQ=F", "S&P 500":"ES=F", "Dow Jones":"YM=F", "Nikkei 225":"^N225", "Hang Seng":"^HSI"})
-    with i2: grid({"DAX 40":"^GDAXI", "IBEX 35":"^IBEX", "CAC 40":"^FCHI", "FTSE 100":"^FTSE", "EuroStoxx":"^STOXX50E"})
+    st.subheader("EE.UU.")
+    grid({"US100":"NQ=F", "S&P 500":"ES=F", "Dow Jones":"YM=F"})
+    st.divider()
+    st.subheader("Europa")
+    grid({"DAX 40":"^GDAXI", "IBEX 35":"^IBEX", "CAC 40":"^FCHI", "EuroStoxx":"^STOXX50E"})
+    st.divider()
+    st.subheader("Asia")
+    grid({"Nikkei 225":"^N225", "Hang Seng":"^HSI"})
 
 with t_mat:
-    m1, m2 = st.tabs(["Metales", "Energía/Agro"])
-    with m1: grid({"Oro":"GC=F", "Plata":"SI=F", "Cobre":"HG=F", "Paladio":"PA=F"})
-    with m2: grid({"Brent":"BZ=F", "WTI":"CL=F", "Gas Nat":"NG=F", "Trigo":"ZW=F", "Café":"KC=F"})
+    st.subheader("Metales")
+    grid({"Oro":"GC=F", "Plata":"SI=F", "Cobre":"HG=F", "Paladio":"PA=F"})
+    st.divider()
+    st.subheader("Energía y Agro")
+    grid({"Brent":"BZ=F", "WTI":"CL=F", "Gas Nat":"NG=F", "Trigo":"ZW=F", "Café":"KC=F"})
 
 with t_div:
-    grid({"EUR/USD":"EURUSD=X", "GBP/USD":"GBPUSD=X", "USD/JPY":"JPY=X", "AUD/USD":"AUDUSD=X", "USD/CHF":"USDCHF=X", "BTC/USD":"BTC-USD", "ETH/USD":"ETH-USD"})
+    st.subheader("Pares Mayores")
+    grid({"EUR/USD":"EURUSD=X", "GBP/USD":"GBPUSD=X", "USD/JPY":"JPY=X", "AUD/USD":"AUDUSD=X", "USD/CHF":"USDCHF=X"})
+    st.divider()
+    st.subheader("Cripto y Otros")
+    grid({"BTC/USD":"BTC-USD", "ETH/USD":"ETH-USD", "EUR/GBP":"EURGBP=X"})
 
 # --- 4. GRÁFICA PROFESIONAL ---
 st.divider()
@@ -129,8 +154,6 @@ with c_graf:
         st.plotly_chart(fig, use_container_width=True)
 
 # --- 5. ESTRATEGIAS Y CARTERA ---
-
-
 if st.session_state.analisis_auto:
     st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
     cols_ia = st.columns(3)
@@ -141,7 +164,7 @@ if st.session_state.analisis_auto:
             st.markdown(f"""<div style="background-color:white; padding:15px; border-radius:10px; border:1px solid #ddd;">
                 <h4 style="text-align:center; color:#268bd2;">{tag.upper()}</h4>
                 <p>🎯 Prob: <b>{s[0]}</b> | {s[1]}</p>
-                <p>📦 Lotes: {s[2]} | In: {s[3]}</p>
+                <p>📦 Lotes: {s[2]} | In: <b>{s[3]}</b></p>
                 <p>🏁 TP: <span style="color:green;">{s[4]}</span> | 🛡️ SL: <span style="color:red;">{s[5]}</span></p>
             </div>""", unsafe_allow_html=True)
             if st.button(f"Abrir {tag.title()}", key=f"op_{tag}"):
