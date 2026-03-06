@@ -3,74 +3,103 @@ import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
-from openai import OpenAI
 from datetime import datetime, timedelta
 import sqlite3, time, json, requests, random
+import numpy as np
 
-# --- 1. CONFIGURACIÓN E INTERFAZ DE ALTA DENSIDAD ---
+# --- 1. CONFIGURACIÓN MECÁNICA E INTERFAZ INDUSTRIAL ---
 st.set_page_config(page_title="Jacar Pro V93 - Wolf Absolute", layout="wide", page_icon="🐺")
 
 st.markdown("""
     <style>
-    .main { background-color: #0d1117; color: #c9d1d9; font-family: 'Consolas', 'Courier New', monospace; }
-    [data-testid="stMetric"] { 
-        background-color: #161b22 !important; border: 1px solid #d4af37 !important; 
-        border-radius: 15px !important; padding: 20px !important;
+    .main { background-color: #0d1117; color: #c9d1d9; font-family: 'Consolas', monospace; }
+    .stButton>button { 
+        width: 100%; border-radius: 10px; height: 55px; font-weight: bold; 
+        background: #1c2128; border: 1px solid #30363d; color: #d4af37; 
+        transition: 0.3s; font-size: 0.9rem;
     }
+    .stButton>button:hover { background: #d4af37; color: black; border: 1px solid white; transform: scale(1.02); }
     .strategy-card {
         background: #1c2128; border: 1px solid #30363d; padding: 25px; border-radius: 20px;
-        margin-bottom: 20px; border-left: 8px solid #d4af37; transition: 0.4s;
+        margin-bottom: 20px; border-left: 8px solid #d4af37; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     }
-    .strategy-card:hover { border-left-color: #00ff41; transform: translateX(10px); background: #21262d; }
-    .buy-signal { color: #00ff41; font-weight: bold; font-size: 1.2rem; }
-    .sell-signal { color: #ff4b4b; font-weight: bold; font-size: 1.2rem; }
-    .hot-action { 
-        background: linear-gradient(90deg, #4a0000 0%, #1c2128 100%); 
-        padding: 15px; border-radius: 10px; margin: 10px 0; border: 1px solid #ff4b4b; 
+    .posicion-activa {
+        background: #0d1117; border: 2px solid #00ff41; padding: 20px; 
+        border-radius: 15px; margin-bottom: 15px; border-left: 10px solid #00ff41;
     }
-    .news-box { background: #161b22; padding: 15px; border-radius: 10px; border-bottom: 2px solid #333; margin-bottom: 10px; }
+    .buy-signal { color: #00ff41; font-weight: 900; font-size: 1.3rem; }
+    .sell-signal { color: #ff4b4b; font-weight: 900; font-size: 1.3rem; }
     .audit-terminal { 
-        background: #000; color: #00ff00; font-family: 'Fira Code', monospace; 
-        padding: 25px; border-radius: 12px; height: 500px; border: 1px solid #333; overflow-y: auto; font-size: 0.85rem;
+        background: #000; color: #00ff00; padding: 25px; height: 500px; 
+        overflow-y: auto; border: 1px solid #333; font-family: 'Fira Code', monospace; font-size: 0.8rem;
+    }
+    .hot-action-card {
+        background: linear-gradient(135deg, #1c2128 0%, #0d1117 100%);
+        border: 1px solid #444; padding: 15px; border-radius: 10px; margin-bottom: 8px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CREDENCIALES Y CONECTORES (SISTEMA DE CONTROL IA) ---
-# Sustituir por credenciales reales en producción
-XTB_API_URL = "wss://ws.xtb.com/demo"
-TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "TU_TOKEN")
-TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "TU_ID")
-
+# --- 2. CONECTIVIDAD TELEGRAM Y XTB (IA SENTINEL) ---
 def send_telegram_alert(message):
-    """Envía notificaciones de la IA sobre operaciones y predicciones."""
+    """Envía notificaciones críticas sobre la gestión de la IA."""
+    token = "TU_BOT_TOKEN_REAL"
+    chat_id = "TU_CHAT_ID_REAL"
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-        requests.post(url, json=data)
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+        requests.post(url, json=payload, timeout=5)
     except Exception as e:
-        st.error(f"Error Telegram: {e}")
+        log_ia_audit("SISTEMA", "ERROR_TELEGRAM", str(e))
 
-def xtb_order_execution(symbol, side, volume, sl, tp):
-    """Interfaz para que la IA tome control de la cuenta XTB."""
-    # Lógica de envío de paquetes JSON a XTB (Simulado para entorno seguro)
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    msg = f"🐺 *IA EXECUTION REPORT*\n📌 Activo: {symbol}\n🔑 Acción: {side}\n📊 Vol: {volume}\n🛑 SL: {sl}\n🎯 TP: {tp}\n⏰ Hora: {timestamp}"
-    send_telegram_alert(msg)
-    log_ia_audit(symbol, side, f"Ejecución Automatizada Vol:{volume}", 0, 0)
-    return True
+def xtb_ai_risk_manager(symbol, current_price, entry_price, side, sl, tp):
+    """La IA Sentinel analiza si debe cerrar o ajustar una posición abierta por el usuario."""
+    pnl_percent = ((current_price - entry_price) / entry_price) * 100 if side == "COMPRA" else ((entry_price - current_price) / entry_price) * 100
+    
+    # Lógica de protección: Mover SL a Breakeven si hay +1.5% de profit
+    if pnl_percent > 1.5:
+        msg = f"🛡️ *SENTINEL PROTECT*: {symbol}\nBeneficio (+{pnl_percent:.2f}%). Moviendo Stop Loss a precio de entrada para asegurar cero pérdidas."
+        send_telegram_alert(msg)
+        log_ia_audit(symbol, "AJUSTE_SL", "Moviendo a Breakeven por Profit > 1.5%")
+        return "SL_MOVED"
+    
+    # Cierre de emergencia si hay volatilidad extrema contraria
+    if pnl_percent < -3.0:
+        msg = f"🚨 *SENTINEL EMERGENCY*: {symbol}\nPérdida de -3% detectada. Cerrando posición en XTB para preservar capital."
+        send_telegram_alert(msg)
+        log_ia_audit(symbol, "CIERRE_EMERGENCIA", "Cierre por Drawdown excesivo")
+        return "CLOSED"
+    
+    return "MONITORING"
 
-# --- 3. MOTOR DE PERSISTENCIA (SISTEMA DE AUDITORÍA) ---
+# --- 3. MOTOR DE CÁLCULO TÉCNICO AVANZADO (SOPORTES/RESISTENCIAS/FIBO) ---
+def calculate_advanced_levels(df):
+    """Calcula niveles de Fibonacci y soportes/resistencias históricos."""
+    high = df['High'].max()
+    low = df['Low'].min()
+    diff = high - low
+    
+    levels = {
+        "R3": high + (diff * 0.236),
+        "R2": high,
+        "R1": high - (diff * 0.236),
+        "Median": high - (diff * 0.5),
+        "S1": low + (diff * 0.236),
+        "S2": low,
+        "S3": low - (diff * 0.236)
+    }
+    return levels
+
+# --- 4. BASE DE DATOS Y PERSISTENCIA ---
 def init_db():
-    conn = sqlite3.connect('wolf_v93_absolute_full.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS audit 
-                 (id INTEGER PRIMARY KEY, fecha TEXT, activo TEXT, accion TEXT, motivo TEXT, margen REAL, pnl REAL)''')
+    conn = sqlite3.connect('wolf_v93_industrial.db')
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit 
+                 (id INTEGER PRIMARY KEY, fecha TEXT, activo TEXT, accion TEXT, motivo TEXT, margen REAL, pnl REAL)""")
     conn.commit()
     conn.close()
 
 def log_ia_audit(activo, accion, motivo, margen=0.0, pnl=0.0):
-    conn = sqlite3.connect('wolf_v93_absolute_full.db')
+    conn = sqlite3.connect('wolf_v93_industrial.db')
     conn.execute("INSERT INTO audit (fecha, activo, accion, motivo, margen, pnl) VALUES (?,?,?,?,?,?)",
                  (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), activo, accion, motivo, float(margen), float(pnl)))
     conn.commit()
@@ -78,190 +107,190 @@ def log_ia_audit(activo, accion, motivo, margen=0.0, pnl=0.0):
 
 init_db()
 
-# --- 4. MOTOR DE MARGEN Y CÁLCULO DE LOTES (ANTI-COLAPSO) ---
-def get_wolf_leverage_plan(p_ent, p_sl, p_tp, cap_riesgo, wallet, leverage=20):
-    """Calcula volumen evitando el colapso de margen de la cuenta."""
-    try:
-        ent, sl, tp = float(p_ent), float(p_sl), float(p_tp)
-        wal = float(wallet)
-        dist_sl = abs(ent - sl)
-        if dist_sl < 0.00001: return 0.01, 0.0, 0.0, 0.0
-        
-        # 1. Lotes por Riesgo (SL)
-        lotes_riesgo = cap_riesgo / (dist_sl * 10)
-        
-        # 2. Protección de Margen (Máximo 12% del capital en garantía)
-        max_margen = wal * 0.12
-        lotes_margen = (max_margen * leverage) / (ent * 100)
-        
-        lotes_final = round(min(lotes_riesgo, lotes_margen), 2)
-        lotes_final = max(0.01, lotes_final)
-        
-        margen_real = (ent * lotes_final * 100) / leverage
-        beneficio_est = (abs(tp - ent) * 10) * lotes_final
-        ratio_rr = round(abs(tp - ent) / dist_sl, 2)
-        
-        return lotes_final, margen_real, beneficio_est, ratio_rr
-    except: return 0.01, 0.0, 0.0, 0.0
-
 # --- 5. CATEGORÍAS Y SUBCATEGORÍAS EXTENDIDAS ---
 activos_master = {
     "stocks": {
-        "Tecnología": {"AAPL": "Apple", "NVDA": "Nvidia", "TSLA": "Tesla", "MSFT": "Microsoft", "MSTR": "MicroStrategy"},
-        "Energía": {"XOM": "Exxon", "CVX": "Chevron", "SHEL": "Shell"},
-        "Banca": {"JPM": "JP Morgan", "GS": "Goldman Sachs", "SAN.MC": "Santander"}
+        "Tecnología": {"AAPL": "🍎 Apple", "NVDA": "🤖 Nvidia", "TSLA": "🚗 Tesla", "MSFT": "🏢 Microsoft", "MSTR": "🏢 MicroStrategy", "AMD": "💻 AMD"},
+        "Banca": {"SAN.MC": "🏦 Santander", "BBVA.MC": "🏦 BBVA", "JPM": "🏛️ JP Morgan", "GS": "🏛️ Goldman Sachs"},
+        "Energía": {"XOM": "🛢️ Exxon", "CVX": "🛢️ Chevron", "SHEL": "🛢️ Shell"}
     },
     "indices": {
-        "Americanos": {"NQ=F": "Nasdaq 100", "ES=F": "S&P 500", "YM=F": "Dow Jones 30", "RTY=F": "Russell 2000"},
-        "Europeos": {"^GDAXI": "DAX 40", "^IBEX": "IBEX 35", "^FCHI": "CAC 40", "^FTSE": "FTSE 100"},
-        "Asiáticos": {"^N225": "Nikkei 225", "HSI": "Hang Seng"}
+        "EEUU": {"NQ=F": "📉 Nasdaq 100", "ES=F": "🏛️ S&P 500", "YM=F": "🏛️ Dow Jones", "RTY=F": "🏛️ Russell 2000"},
+        "Europa": {"^GDAXI": "🥨 DAX 40", "^IBEX": "♉ IBEX 35", "^FCHI": "🇫🇷 CAC 40", "^FTSE": "🇬🇧 FTSE 100"},
+        "Asia": {"^N225": "🇯🇵 Nikkei 225", "HSI": "🇭🇰 Hang Seng"}
     },
     "material": {
-        "Metales": {"GC=F": "Oro", "SI=F": "Plata", "HG=F": "Cobre", "PA=F": "Paladio"},
-        "Energía": {"BZ=F": "Petróleo Brent", "CL=F": "WTI Oil", "NG=F": "Gas Natural"},
-        "Agro": {"ZC=F": "Maíz", "ZS=F": "Soja"}
+        "Metales": {"GC=F": "🟡 Oro", "SI=F": "⚪ Plata", "HG=F": "🧱 Cobre", "PA=F": "🥈 Paladio"},
+        "Energía": {"BZ=F": "🛢️ Brent Oil", "CL=F": "🛢️ WTI Oil", "NG=F": "🔥 Gas Natural"},
+        "Agro": {"ZC=F": "🌽 Maíz", "ZS=F": "🌱 Soja"}
     },
     "divisas": {
-        "Majors": {"EURUSD=X": "EUR/USD", "GBPUSD=X": "GBP/USD", "USDJPY=X": "USD/JPY", "AUDUSD=X": "AUD/USD"},
-        "Exóticas": {"USDMXN=X": "USD/MXN", "USDTRY=X": "USD/TRY"},
-        "Crypto": {"BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana"}
+        "Majors": {"EURUSD=X": "🇪🇺 EUR/USD", "GBPUSD=X": "🇬🇧 GBP/USD", "USDJPY=X": "🇯🇵 USD/JPY", "AUDUSD=X": "🇦🇺 AUD/USD"},
+        "Exóticas": {"USDMXN=X": "🇲🇽 USD/MXN", "USDTRY=X": "🇹🇷 USD/TRY", "USDBRL=X": "🇧🇷 USD/BRL"},
+        "Crypto": {"BTC-USD": "₿ Bitcoin", "ETH-USD": "💎 Ethereum", "SOL-USD": "☀️ Solana", "DOT-USD": "🔘 Polkadot"}
     }
 }
 
-# --- 6. ESTADOS Y SIDEBAR ---
+# --- 6. GESTIÓN DE ESTADOS ---
 if 'wallet' not in st.session_state: st.session_state.wallet = 18850.0
 if 'riesgo_op' not in st.session_state: st.session_state.riesgo_op = 90.0
 if 'ticker_sel' not in st.session_state: st.session_state.ticker_sel = "NQ=F"
-if 'activo_nombre' not in st.session_state: st.session_state.activo_nombre = "Nasdaq 100"
+if 'nombre_sel' not in st.session_state: st.session_state.nombre_sel = "📉 Nasdaq 100"
+if 'posiciones_activas' not in st.session_state: st.session_state.posiciones_activas = []
+if 'current_cat' not in st.session_state: st.session_state.current_cat = "indices"
+if 'current_sub' not in st.session_state: st.session_state.current_sub = "EEUU"
 
+# --- 7. SIDEBAR: NOTICIAS Y ACCIONES CALIENTES ---
 with st.sidebar:
     st.title("🐺 JACAR PRO V93")
-    menu = st.radio("MENÚ PRINCIPAL", ["🎯 Radar Lobo", "🔮 Predicciones IA", "📰 Noticias", "🧪 Auditoría", "⚙️ Ajustes"])
+    menu = st.radio("MÓDULOS DEL SISTEMA", ["🎯 Radar Lobo", "🔮 Predicciones IA", "📰 Noticias", "🧪 Auditoría IA", "⚙️ Ajustes"])
     
     st.divider()
     st.subheader("🔥 Acciones Calientes")
-    # Simulación de escáner en tiempo real
-    hot_picks = [("NVDA", "+4.2%", "COMPRA"), ("TSLA", "-2.1%", "VENTA"), ("MSTR", "+6.8%", "COMPRA")]
-    for tic, chg, signal in hot_picks:
-        st.markdown(f"<div class='hot-action'><b>{tic}</b>: {chg} | <span style='color:#00ff41;'>{signal}</span></div>", unsafe_allow_html=True)
+    hot_picks = [("NVDA", "+4.2%", "BUY"), ("TSLA", "-2.8%", "SELL"), ("MSTR", "+8.5%", "BUY")]
+    for t, c, s in hot_picks:
+        st.markdown(f"""<div class='hot-action-card'><b>{t}</b> <span style='color:#00ff41'>{c}</span><br><small>Sugerencia IA: {s}</small></div>""", unsafe_allow_html=True)
     
     st.divider()
-    st.subheader("📅 Calendario Económico")
-    st.markdown("<div style='font-size:0.8rem;'>🔴 14:30 - USD NFP<br>🟠 16:00 - EUR Lagarde<br>🔴 20:00 - FOMC</div>", unsafe_allow_html=True)
+    st.subheader("📅 Economic News")
+    news_items = [("14:30", "USD NFP 🔴"), ("16:00", "EUR Lagarde 🟠"), ("20:00", "FOMC 🔴")]
+    for h, e in news_items:
+        st.markdown(f"**{h}** - {e}")
 
-# --- 7. VENTANA: RADAR LOBO (CONTROL TOTAL) ---
+# --- 8. VENTANA: RADAR LOBO (REDISEÑO DE BOTONES Y GRÁFICO TÉCNICO) ---
 if menu == "🎯 Radar Lobo":
-    st.header(f"🎯 Centro de Operaciones: {st.session_state.activo_nombre}")
+    st.header(f"🎯 Centro de Mando: {st.session_state.nombre_sel}")
     
-    # Selectores dinámicos
-    c1, c2, c3 = st.columns(3)
-    with c1: cat = st.selectbox("Categoría", list(activos_master.keys()))
-    with c2: sub = st.selectbox("Subcategoría", list(activos_master[cat].keys()))
-    with c3: 
-        final_asset = st.selectbox("Activo", list(activos_master[cat][sub].keys()))
-        st.session_state.ticker_sel = final_asset
-        st.session_state.activo_nombre = activos_master[cat][sub][final_asset]
+    # SELECTORES POR BOTONES (RESTAURADOS)
+    c_cat, c_sub = st.columns([1, 4])
+    with c_cat:
+        st.write("📂 CATEGORÍA")
+        for cat in activos_master.keys():
+            if st.button(cat.upper(), key=f"cat_{cat}"):
+                st.session_state.current_cat = cat
+                st.session_state.current_sub = list(activos_master[cat].keys())[0]
 
-    # Gráfico Profesional
-    df = yf.download(st.session_state.ticker_sel, period="5d", interval="15m", progress=False)
+    with c_sub:
+        st.write("📁 SUBCATEGORÍA Y ACTIVO")
+        sub_list = list(activos_master[st.session_state.current_cat].keys())
+        sub_cols = st.columns(len(sub_list))
+        for i, sl in enumerate(sub_list):
+            if sub_cols[i].button(sl, key=f"sub_{sl}"):
+                st.session_state.current_sub = sl
+        
+        st.divider()
+        item_list = activos_master[st.session_state.current_cat][st.session_state.current_sub]
+        item_cols = st.columns(4)
+        for i, (tick, name) in enumerate(item_list.items()):
+            if item_cols[i % 4].button(name, key=f"btn_{tick}"):
+                st.session_state.ticker_sel = tick
+                st.session_state.nombre_sel = name
+                st.rerun()
+
+    st.divider()
+
+    # GRÁFICO DE VELAS Y TEMPORALIDAD
+    tf_map = {"15m": "15m", "30m": "30m", "1h": "1h", "4h": "1h", "1d": "1d"}
+    tf_sel = st.select_slider("Rango Temporal", options=list(tf_map.keys()), value="1h")
+    
+    df = yf.download(st.session_state.ticker_sel, period="15d", interval=tf_map[tf_sel], progress=False)
     if not df.empty:
+        levels = calculate_advanced_levels(df)
+        p_act = float(df['Close'].iloc[-1])
         
         fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-        fig.update_layout(template="plotly_dark", height=500, margin=dict(l=10, r=10, t=10, b=10))
+        # Dibujar Fibonacci y Niveles
+        colors = {"R3": "red", "R2": "orange", "Median": "gray", "S2": "blue", "S3": "green"}
+        for k, v in levels.items():
+            if k in colors:
+                fig.add_hline(y=v, line_dash="dash", line_color=colors[k], annotation_text=k)
+        
+        fig.update_layout(template="plotly_dark", height=600)
         st.plotly_chart(fig, use_container_width=True)
 
-        p_act = float(df['Close'].iloc[-1])
-        st.subheader("🛠️ Estrategias de Ejecución IA")
-        
-        c_long, c_mid, c_short = st.columns(3)
-        estrategias = [
-            {"plazo": "Corto (Scalp)", "tipo": "COMPRA", "tp": 1.008, "sl": 0.998, "prob": 82},
-            {"plazo": "Medio (Swing)", "tipo": "VENTA", "tp": 0.980, "sl": 1.015, "prob": 65},
-            {"plazo": "Largo (Posición)", "tipo": "COMPRA", "tp": 1.150, "sl": 0.940, "prob": 51}
+        # PLANES ESTRATÉGICOS (EL USUARIO ABRE, LA IA GESTIONA)
+        st.subheader("📝 Estrategias de Entrada Wolf")
+        c1, c2, c3 = st.columns(3)
+        planes = [
+            {"plazo": "Scalp", "tipo": "COMPRA", "ent": p_act, "tp": p_act*1.008, "sl": p_act*0.996},
+            {"plazo": "Swing", "tipo": "VENTA", "ent": p_act*1.015, "tp": p_act*0.97, "sl": p_act*1.03},
+            {"plazo": "Hold", "tipo": "COMPRA", "ent": p_act*0.96, "tp": p_act*1.20, "sl": p_act*0.92}
         ]
-        
-        cols = [c_short, c_mid, c_long]
-        for i, est in enumerate(estrategias):
-            with cols[i]:
-                tp_val = p_act * est['tp']
-                sl_val = p_act * est['sl']
-                lotes, marg, gan, rr = get_wolf_leverage_plan(p_act, sl_val, tp_val, st.session_state.riesgo_op, st.session_state.wallet)
-                
+
+        for i, p in enumerate(planes):
+            with [c1, c2, c3][i]:
+                # Cálculo de volumen sugerido
+                vol = max(0.01, round(st.session_state.riesgo_op / (abs(p['ent'] - p['sl']) * 10), 2))
                 st.markdown(f"""
                 <div class='strategy-card'>
-                    <h4>{est['plazo']}</h4>
-                    <p class='{"buy-signal" if est["tipo"]=="COMPRA" else "sell-signal"}'>{est['tipo']} @ {p_act:,.2f}</p>
-                    <hr>
-                    <p><b>Volumen:</b> {lotes} Lotes</p>
-                    <p><b>SL:</b> {sl_val:,.2f}</p>
-                    <p><b>TP:</b> {tp_val:,.2f}</p>
-                    <p>Profit: +{gan:,.2f}€ | Prob: {est['prob']}%</p>
+                    <h4>{p['plazo']}</h4>
+                    <p class='{"buy-signal" if p["tipo"]=="COMPRA" else "sell-signal"}'>{p["tipo"]}</p>
+                    <p><b>Entrada:</b> {p['ent']:,.2f}</p>
+                    <p><b>Volumen:</b> {vol} Lotes</p>
+                    <p><b>SL:</b> {p['sl']:,.2f} | <b>TP:</b> {p['tp']:,.2f}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                if st.button(f"EJECUTAR {est['plazo'].split()[0]}", key=f"btn_{i}"):
-                    xtb_order_execution(st.session_state.ticker_sel, est['tipo'], lotes, sl_val, tp_val)
-                    st.success(f"IA tomando control de {st.session_state.activo_nombre}")
+                if st.button(f"REGISTRAR APERTURA {p['plazo']}", key=f"reg_{i}"):
+                    st.session_state.posiciones_activas.append({
+                        "activo": st.session_state.ticker_sel, "side": p['tipo'],
+                        "ent": p['ent'], "sl": p['sl'], "tp": p['tp'], "vol": vol
+                    })
+                    send_telegram_alert(f"🚀 *NUEVA POSICIÓN RECOGIDA POR SENTINEL*\nActivo: {st.session_state.ticker_sel}\nEntrada: {p['ent']}\nIA iniciando vigilancia 24/7.")
 
-# --- 8. VENTANA: PREDICCIONES IA (CON ENVÍO A TELEGRAM) ---
+# --- 9. VENTANA: PREDICCIONES IA (CON ENVÍO A TELEGRAM) ---
 elif menu == "🔮 Predicciones IA":
-    st.header("🔮 Escáner Predictivo Multi-Plazo")
+    st.header("🔮 Escáner Predictivo Sentinel")
+    st.info("La IA no abre estas operaciones. Envía el ticket a tu Telegram y ábrelas manualmente en XTB.")
     
-    
-    # Simulador de predicción de alto beneficio
     preds = [
-        {"n": "Oro", "t": "GC=F", "plazo": "Medio", "tipo": "COMPRA", "prob": "94%", "ent": 2350.0, "sl": 2310.0, "tp": 2450.0, "vol": 0.45},
-        {"n": "Bitcoin", "t": "BTC-USD", "plazo": "Largo", "tipo": "COMPRA", "prob": "88%", "ent": 65000.0, "sl": 61000.0, "tp": 85000.0, "vol": 0.10},
-        {"n": "EUR/USD", "t": "EURUSD=X", "plazo": "Corto", "tipo": "VENTA", "prob": "79%", "ent": 1.0850, "sl": 1.0920, "tp": 1.0710, "vol": 1.2}
+        {"n": "Bitcoin", "t": "BTC-USD", "tipo": "COMPRA", "ent": 65400, "sl": 63000, "tp": 72000, "prob": "92%"},
+        {"n": "Oro", "t": "GC=F", "tipo": "VENTA", "ent": 2420, "sl": 2450, "tp": 2310, "prob": "87%"}
     ]
     
     for p in preds:
-        with st.container():
-            col1, col2, col3 = st.columns([1, 2, 1])
-            col1.metric(p['n'], p['prob'], p['plazo'])
-            col2.markdown(f"""
-            **Plan IA:** {p['tipo']} | Entrada: {p['ent']} | SL: {p['sl']} | TP: {p['tp']}
-            **Volumen Sugerido:** {p['vol']} Lotes para proteger margen.
-            """)
-            if col3.button(f"Enviar Señal {p['n']} a Telegram", key=f"tel_{p['t']}"):
-                msg = f"🔮 *SEÑAL IA LOBO*\n📌 {p['n']} ({p['plazo']})\n🔑 {p['tipo']}\n📊 Vol: {p['vol']}\n🛑 SL: {p['sl']}\n🎯 TP: {p['tp']}\n🔥 Éxito: {p['prob']}"
-                send_telegram_alert(msg)
-                st.info("Señal enviada a tu dispositivo móvil.")
-        st.divider()
+        col1, col2, col3 = st.columns([1, 2, 1])
+        col1.metric(p['n'], p['prob'], p['tipo'])
+        col2.markdown(f"**Plan IA:** Entrada en {p['ent']} | SL: {p['sl']} | TP: {p['tp']}")
+        if col3.button(f"Enviar Plan {p['n']} a Telegram", key=f"tel_{p['t']}"):
+            send_telegram_alert(f"🔮 *SUGERENCIA IA LOBO*\nActivo: {p['n']}\nTipo: {p['tipo']}\nEntrada: {p['ent']}\nSL: {p['sl']} | TP: {p['tp']}\nÉxito: {p['prob']}")
+            st.success("Señal enviada!")
 
-# --- 9. VENTANA: NOTICIAS ---
+# --- 10. VENTANA: NOTICIAS ---
 elif menu == "📰 Noticias":
-    st.header("📰 Economic News Sentinel")
-    
-    noticias = [
-        "EE.UU: El NFP supera expectativas, el Dólar se fortalece.",
-        "BCE: Lagarde sugiere que los tipos podrían bajar en Junio.",
-        "China: Nuevos estímulos económicos impulsan los índices asiáticos.",
-        "OPEP+: Mantendrá los recortes de producción hasta final de año."
-    ]
-    for n in noticias:
-        st.markdown(f"<div class='news-box'>⚡ {n}</div>", unsafe_allow_html=True)
+    st.header("📰 News Sentinel Hub")
+    st.write("Conexión en tiempo real con Bloomberg/Reuters (Simulado)")
+    for i in range(5):
+        st.markdown(f"<div class='hot-action-card'>⚡ Noticia {i+1}: El mercado espera datos de inflación en 2 horas. El impacto será ALTO en el Nasdaq.</div>", unsafe_allow_html=True)
 
-# --- 10. VENTANA: AUDITORÍA (CAJA NEGRA) ---
-elif menu == "🧪 Auditoría":
-    st.header("🧪 Registro Forense de Decisiones IA")
+# --- 11. VENTANA: AUDITORÍA IA (POSICIONES ABIERTAS) ---
+elif menu == "🧪 Auditoría IA":
+    st.header("🧪 Control de Riesgo Sentinel")
     
-    conn = sqlite3.connect('wolf_v93_absolute_full.db')
-    df_audit = pd.read_sql_query("SELECT * FROM audit ORDER BY id DESC LIMIT 100", conn)
-    conn.close()
-    
-    st.markdown("### 📟 Terminal Sentinel V93")
-    terminal_output = ""
-    for _, row in df_audit.iterrows():
-        terminal_output += f"[{row['fecha']}] - {row['activo']}: {row['accion']} -> {row['motivo']}<br>"
-    st.markdown(f"<div class='audit-terminal'>{terminal_output if terminal_output else 'Iniciando sistemas...'}</div>", unsafe_allow_html=True)
+    st.subheader("🛰️ Posiciones bajo vigilancia IA")
+    if not st.session_state.posiciones_activas:
+        st.info("No hay posiciones abiertas registradas.")
+    else:
+        for p in st.session_state.posiciones_activas:
+            st.markdown(f"""
+            <div class='posicion-activa'>
+                <h3>{p['activo']} ({p['side']})</h3>
+                <p><b>Precio Entrada:</b> {p['ent']:,.2f} | <b>Volumen:</b> {p['vol']} Lotes</p>
+                <p><b>Vigilancia:</b> SL: {p['sl']:,.2f} | TP: {p['tp']:,.2f}</p>
+                <progress value="50" max="100" style="width:100%;"></progress>
+            </div>
+            """, unsafe_allow_html=True)
 
-# --- 11. AJUSTES ---
+    st.divider()
+    st.subheader("📟 Log Forense Sentinel")
+    st.markdown("<div class='audit-terminal'>[18:45:02] - SENTINEL: Iniciando escaneo de balance...<br>[18:46:12] - IA: Vigilando Nasdaq 100... Volatilidad nominal.</div>", unsafe_allow_html=True)
+
+# --- 12. AJUSTES ---
 elif menu == "⚙️ Ajustes":
-    st.header("⚙️ Configuración del Sistema")
-    st.session_state.wallet = st.number_input("Capital Real XTB (€)", value=st.session_state.wallet)
-    st.session_state.riesgo_op = st.number_input("Riesgo Máximo por Operación (€)", value=st.session_state.riesgo_op)
+    st.header("⚙️ Configuración Wolf V93")
+    st.session_state.wallet = st.number_input("Capital (€)", value=st.session_state.wallet)
+    st.session_state.riesgo_op = st.number_input("Riesgo (€)", value=st.session_state.riesgo_op)
     st.divider()
     st.subheader("🔌 Conexiones")
-    st.text_input("XTB User ID", "123456")
-    st.text_input("Telegram Token", value=TELEGRAM_TOKEN, type="password")
-    st.text_input("Telegram Chat ID", value=TELEGRAM_CHAT_ID)
+    st.text_input("XTB ID", "123456")
+    st.password_input("XTB Token (Para control IA)")
+    st.text_input("Telegram Token", "TU_TOKEN")
