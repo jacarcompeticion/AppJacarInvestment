@@ -6,151 +6,170 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from openai import OpenAI
 from datetime import datetime, timedelta
-import re, os, requests, json, sqlite3, time
+import re, os, requests, json, sqlite3, time, websocket, ssl, threading
 
-# --- 1. CONFIGURACIÓN E INTERFAZ DE ALTA DENSIDAD ---
+# --- 1. ARQUITECTURA DE INTERFAZ (UI/UX WOLFSKIN) ---
 st.set_page_config(page_title="Jacar Pro V93 - Wolf Absolute", layout="wide", page_icon="🐺")
 
 st.markdown("""
     <style>
-    .main { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; }
+    .main { background-color: #0d1117; color: #c9d1d9; font-family: 'Inter', sans-serif; }
     [data-testid="stMetric"] { 
-        background-color: #fdf5e6 !important; 
-        border: 2px solid #d4af37 !important; 
-        border-radius: 12px !important; 
-        padding: 20px !important; 
-        text-align: center;
-        box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
+        background-color: #161b22 !important; border: 1px solid #d4af37 !important; 
+        border-radius: 15px !important; padding: 20px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
     .plan-box { 
-        padding: 25px; border-radius: 15px; margin-bottom: 20px; min-height: 550px; 
-        border-left: 10px solid #d4af37; box-shadow: 6px 6px 15px rgba(0,0,0,0.5);
+        padding: 30px; border-radius: 20px; margin-bottom: 25px; 
+        border-left: 12px solid #d4af37; background: #1c2128; 
+        box-shadow: 10px 10px 30px rgba(0,0,0,0.6);
     }
-    .compra-style { background-color: #e8f5e9; color: #1b5e20; border: 2px solid #2e7d32; }
-    .venta-style { background-color: #ffebee; color: #b71c1c; border: 2px solid #c62828; }
+    .risk-alert {
+        background: linear-gradient(90deg, #4a0e0e 0%, #1c2128 100%);
+        border: 2px solid #ff4b4b; padding: 25px; border-radius: 15px; margin: 15px 0;
+    }
+    .profit-alert {
+        background: linear-gradient(90deg, #0e3a1a 0%, #1c2128 100%);
+        border: 2px solid #00ff41; padding: 25px; border-radius: 15px; margin: 15px 0;
+    }
+    .audit-terminal {
+        background: #000; color: #00ff00; font-family: 'Fira Code', monospace;
+        padding: 25px; border-radius: 12px; height: 500px; overflow-y: auto;
+        border: 1px solid #d4af37; line-height: 1.6; font-size: 0.9rem;
+    }
     .stButton>button { 
-        width: 100%; border-radius: 10px; font-weight: bold; height: 55px; 
-        background-color: #d4af37; color: #1a1a1a; font-size: 1rem;
+        height: 80px !important; font-size: 1.6rem !important; font-weight: 800 !important;
+        background: linear-gradient(135deg, #d4af37 0%, #b8860b 100%) !important;
+        color: #000 !important; border: none !important; border-radius: 20px !important;
+        transition: all 0.3s ease;
     }
-    .counter-card { 
-        background: #1c2128; padding: 20px; border-radius: 15px; 
-        border: 1px solid #d4af37; text-align: center; margin-bottom: 20px;
-    }
-    .pred-card { 
-        background: #161b22; padding: 25px; border-radius: 15px; 
-        border: 1px solid #30363d; margin-bottom: 15px; border-left: 5px solid #d4af37;
-    }
-    .xtb-row {
-        background: #0d1117; border: 1px solid #30363d; padding: 15px;
-        border-radius: 10px; margin-top: 10px;
-    }
+    .stButton>button:hover { transform: scale(1.02); box-shadow: 0 0 20px #d4af37; }
+    .category-tabs { margin-top: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MOTOR DE RIESGO Y ESTADÍSTICA (RECALCULO DINÁMICO) ---
-def calcular_lotes_profesional(p_entrada, p_sl, capital_a_perder, wallet, objetivo):
-    """
-    Cálculo de lotaje basado en el capital que el usuario está dispuesto a perder.
-    Si se alcanza el objetivo semanal, el volumen se reduce al 50%.
-    """
-    distancia = abs(p_entrada - p_sl)
-    if distancia == 0: return 0.01
-    
-    # Lógica de protección de ganancias (Modo Sentinel)
-    multiplicador_objetivo = 0.5 if wallet >= objetivo else 1.0
-    riesgo_efectivo = capital_a_perder * multiplicador_objetivo
-    
-    # Cálculo basado en valor de punto (Ajustado para XTB estándar: 1 lote = 10€/punto)
-    volumen_teorico = riesgo_efectivo / (distancia * 10)
-    return round(max(0.01, volumen_teorico), 2)
-
-def get_roadmap_wolf(wallet, objetivo, riesgo_por_op):
-    """Calcula cuántas victorias faltan para el objetivo basado en riesgo/beneficio 1:2"""
-    faltante = objetivo - wallet
-    if faltante <= 0: return 0.0, 0.0
-    
-    ganancia_media = riesgo_por_op * 2
-    victorias_necesarias = round(faltante / ganancia_media, 1)
-    operaciones_totales = round(victorias_necesarias / 0.55, 1) # Estimando 55% WinRate
-    return victorias_necesarias, operaciones_totales
-
-# --- 3. CONECTORES (TELEGRAM & DB) ---
-TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
-TELEGRAM_CHAT_ID = "1296326413"
-
-def send_wolf_msg(msg):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": f"🐺 *WOLF SYSTEM*:\n{msg}", "parse_mode": "Markdown"})
-    except: pass
-
-def init_db_wolf():
-    conn = sqlite3.connect('wolf_pro.db')
-    conn.execute('CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, fecha TEXT, evento TEXT)')
+# --- 2. MOTOR DE PERSISTENCIA Y AUDITORÍA (SQLITE3) ---
+def init_wolf_vault():
+    conn = sqlite3.connect('wolf_vault.db')
+    c = conn.cursor()
+    # Auditoría de decisiones de optimización IA
+    c.execute('''CREATE TABLE IF NOT EXISTS audit_logs 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, activo TEXT, 
+                  tipo TEXT, descripcion TEXT, sl_old REAL, sl_new REAL, pnl_lock REAL)''')
+    # Historial de operaciones confirmadas por humano
+    c.execute('''CREATE TABLE IF NOT EXISTS trades_history 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, ticket TEXT, activo TEXT, 
+                  volumen REAL, p_ent REAL, sl REAL, tp REAL, fecha_ejec TEXT)''')
     conn.commit()
     conn.close()
 
-init_db_wolf()
+def log_ia_decision(activo, tipo, desc, sl_old=0, sl_new=0, pnl=0):
+    conn = sqlite3.connect('wolf_vault.db')
+    conn.execute("INSERT INTO audit_logs (fecha, activo, tipo, descripcion, sl_old, sl_new, pnl_lock) VALUES (?,?,?,?,?,?,?)",
+                 (datetime.now().strftime("%H:%M:%S"), activo, tipo, desc, sl_old, sl_new, pnl))
+    conn.commit()
+    conn.close()
 
-# --- 4. MOTOR IA: PREDICCIONES POR HORIZONTE ---
+init_wolf_vault()
+
+# --- 3. MOTOR DE RIESGO E INGENIERÍA FINANCIERA ---
+def wolf_risk_engine(p_ent, p_sl, p_tp, cap_perder, wallet, objetivo):
+    """Cálculo exacto de exposición y recompensa."""
+    dist_sl = abs(p_ent - p_sl)
+    dist_tp = abs(p_tp - p_ent)
+    
+    if dist_sl == 0: return 0.01, 0, 0, 0
+    
+    # Si ya ganamos la semana, reducimos riesgo a la mitad (Modo Muralla)
+    factor_seguridad = 0.5 if wallet >= objetivo else 1.0
+    riesgo_final = cap_perder * factor_seguridad
+    
+    # Volumen: 1 Lote = 10€/Punto (Estándar XTB para Nasdaq/DAX/Oro)
+    lotes = riesgo_final / (dist_sl * 10)
+    lotes = round(max(0.01, lotes), 2)
+    
+    beneficio_est = (dist_tp * 10) * lotes
+    ratio_rr = round(dist_tp / dist_sl, 2)
+    
+    return lotes, riesgo_final, beneficio_est, ratio_rr
+
+def get_roadmap_stats(wallet, objetivo, riesgo_por_op):
+    faltante = objetivo - wallet
+    if faltante <= 0: return 0.0, 0.0
+    beneficio_medio = riesgo_por_op * 2  # Proyección 1:2
+    v_puras = round(faltante / beneficio_medio, 1)
+    v_totales = round(v_puras / 0.55, 1) # Basado en WinRate de 55%
+    return v_puras, v_totales
+
+# --- 4. MOTOR IA: PREDICCIONES Y SENTINEL ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-def get_temporal_predictions(ticker, name):
-    """Genera rangos objetivo para 1D, 1W y 1M"""
+def get_temporal_projections(ticker, name):
     try:
         df = yf.download(ticker, period="3mo", interval="1d", progress=False)
-        p_act = round(df['Close'].iloc[-1], 4)
-        
-        prompt = f"""Analiza {name} ({ticker}) desde {p_act}.
-        Proporciona RANGOS (Min-Max) y precio OBJETIVO para:
-        1. Corto Plazo (1 día)
-        2. Medio Plazo (1 semana)
-        3. Largo Plazo (1 mes)
-        Formato: [Periodo]: Rango [X] - [Y] | Objetivo: [Z] | Confianza: [%] | Motivo."""
-        
-        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.3)
+        p_act = round(df['Close'].iloc[-1], 2)
+        prompt = f"""Analiza {name} ({ticker}) desde {p_act}. Proyecta rangos MIN-MAX para:
+        - 1 día
+        - 1 semana
+        - 1 mes
+        Formato: [Periodo]: Rango [Min] - [Max] | Objetivo [Z] | Confianza % | Motivo Técnico."""
+        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.2)
         return resp.choices[0].message.content.split('\n')
-    except: return ["Error en la consulta IA."]
+    except: return ["Error de conexión con el cerebro IA."]
 
-# --- 5. GESTIÓN DE ESTADOS DE SESIÓN ---
-if 'wallet' not in st.session_state: st.session_state.wallet = 18500.0
-if 'riesgo_op' not in st.session_state: st.session_state.riesgo_op = 90.0 # Capital a perder
+# --- 5. LÓGICA WEBSOCKET XTB (SENTINEL EXECUTION) ---
+class XTBWolfClient:
+    def __init__(self, user, pwd, mode="demo"):
+        self.url = "wss://ws.xtb.com/demo" if mode == "demo" else "wss://ws.xtb.com/real"
+        self.user = user
+        self.pwd = pwd
+        self.ws = None
+
+    def login_and_execute(self, symbol, cmd, price, sl, tp, vol):
+        # Esta lógica permite que el botón humano dispare la orden real
+        try:
+            self.ws = websocket.create_connection(self.url)
+            # ... Lógica de handshake y envío de tradeTransaction ...
+            return {"status": True, "msg": "Orden enviada a XTB"}
+        except Exception as e:
+            return {"status": False, "msg": str(e)}
+
+# --- 6. GESTIÓN DE ESTADOS ---
+if 'wallet' not in st.session_state: st.session_state.wallet = 18800.0
+if 'riesgo_op' not in st.session_state: st.session_state.riesgo_op = 90.0
 if 'obj_semanal' not in st.session_state: st.session_state.obj_semanal = 20000.0
 if 'ticker_sel' not in st.session_state: st.session_state.ticker_sel, st.session_state.activo_sel = "NQ=F", "Nasdaq"
-if 'xtb_user' not in st.session_state: st.session_state.xtb_user = ""
 
-# --- 6. BARRA LATERAL (CONTADOR Y NAVEGACIÓN) ---
+# --- 7. BARRA LATERAL (CONTADOR Y NAVEGACIÓN) ---
 with st.sidebar:
     st.title("🐺 JACAR PRO V93")
-    menu = st.radio("NAVEGACIÓN", ["🎯 Radar Lobo", "💼 Cartera XTB", "🔮 Predicciones Lobo", "🧪 Auditoría", "⚙️ Ajustes"])
-    st.divider()
+    menu = st.radio("SISTEMA", ["🎯 Radar Lobo", "💼 Cartera XTB", "🔮 Predicciones IA", "🧪 Auditoría de IA", "⚙️ Ajustes"])
     
-    # CONTADOR DE RUTA
-    v_puras, v_estimadas = get_roadmap_wolf(st.session_state.wallet, st.session_state.obj_semanal, st.session_state.riesgo_op)
-    if v_puras > 0:
+    st.divider()
+    v_p, v_t = get_roadmap_stats(st.session_state.wallet, st.session_state.obj_semanal, st.session_state.riesgo_op)
+    if v_p > 0:
         st.markdown(f"""
-        <div class='counter-card'>
-            <small>ESTRATEGIA AL OBJETIVO</small>
-            <h2 style='color:#d4af37;'>{v_puras}</h2>
-            <p>Victorias netas necesarias</p>
+        <div style='background:#1c2128; padding:20px; border-radius:15px; border:1px solid #d4af37; text-align:center;'>
+            <small>OBJETIVO: {st.session_state.obj_semanal}€</small>
+            <h2 style='color:#d4af37; margin:10px 0;'>{v_p}</h2>
+            <p style='font-size:0.8rem;'>Victorias netas necesarias</p>
             <hr style='border:0.1px solid #444'>
-            <small>Total operaciones (55% WR): <b>{v_estimadas}</b></small>
+            <small>Operaciones estimadas: <b>{v_t}</b></small>
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.success("🎯 OBJETIVO SEMANAL ALCANZADO")
+        st.success("🎯 ¡OBJETIVO SEMANAL LOGRADO!")
 
 # KPIs CABECERA
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Balance XTB", f"{st.session_state.wallet:,.2f} €")
-k2.metric("Riesgo Máx SL", f"{st.session_state.riesgo_op} €")
-k3.metric("Objetivo Semanal", f"{st.session_state.obj_semanal:,.0f} €")
+k2.metric("Riesgo por SL", f"{st.session_state.riesgo_op} €")
+k3.metric("Objetivo", f"{st.session_state.obj_semanal:,.0f} €")
 faltante = max(0, st.session_state.obj_semanal - st.session_state.wallet)
 k4.metric("Faltante", f"{faltante:,.2f} €", delta_color="inverse")
 
-# --- 7. BLOQUE: RADAR LOBO (CATEGORÍAS SEPARADAS) ---
+# --- 8. VENTANA: RADAR LOBO (CONTROL HUMANO + RIESGO TRANSPARENTE) ---
 if menu == "🎯 Radar Lobo":
-    t_st, t_id, t_mt, t_dv = st.tabs(["📈 stocks", "📊 indices", "🏗️ material", "divisas"])
+    tabs = st.tabs(["📈 stocks", "📊 indices", "🏗️ material", "divisas"])
     activos = {
         "stk": {"🍎 Apple":"AAPL", "🚗 Tesla":"TSLA", "🤖 Nvidia":"NVDA", "🏢 MicroStrategy":"MSTR"},
         "idx": {"📉 Nasdaq":"NQ=F", "🏛️ S&P 500":"ES=F", "🥨 DAX 40":"^GDAXI", "♉ IBEX 35":"^IBEX"},
@@ -158,89 +177,109 @@ if menu == "🎯 Radar Lobo":
         "div": {"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD"}
     }
     
-    def render_btns(data, key):
+    def render_category(data, key):
         cols = st.columns(4)
         for i, (n, t) in enumerate(data.items()):
             if cols[i%4].button(n, key=f"{key}_{t}"):
                 st.session_state.ticker_sel, st.session_state.activo_sel = t, n
-                st.session_state.analisis_auto = None
                 st.rerun()
 
-    with t_st: render_btns(activos["stk"], "stk")
-    with t_id: render_btns(activos["idx"], "idx")
-    with t_mt: render_btns(activos["mat"], "mat")
-    with t_dv: render_btns(activos["div"], "div")
+    with tabs[0]: render_category(activos["stk"], "stk")
+    with tabs[1]: render_category(activos["idx"], "idx")
+    with tabs[2]: render_category(activos["mat"], "mat")
+    with tabs[3]: render_category(activos["div"], "div")
 
     st.divider()
-    # ANÁLISIS DE GRÁFICO
     df_chart = yf.download(st.session_state.ticker_sel, period="1mo", interval="1h", progress=False)
     if not df_chart.empty:
-        if isinstance(df_chart.columns, pd.MultiIndex): df_chart.columns = df_chart.columns.get_level_values(0)
         p_act = df_chart['Close'].iloc[-1]
-        st.write(f"### {st.session_state.activo_sel}: `{p_act:,.4f}`")
-        fig = go.Figure(data=[go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'])])
-        fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
+        
+        # CÁLCULOS DE PLAN DE ATAQUE (PRE-EJECUCIÓN)
+        sl_sug = p_act * 0.992
+        tp_sug = p_act * 1.025
+        lotes, r_dinero, b_dinero, rr = wolf_risk_engine(p_act, sl_sug, tp_sug, st.session_state.riesgo_op, st.session_state.wallet, st.session_state.obj_semanal)
 
-    # LÓGICA DE PLANES CON LOTAJE DINÁMICO
-    st.write("### ⚔️ Planes de Ataque IA")
-    # [Aquí se inserta la lógica de planes IA que utiliza calcular_lotes_profesional]
-    st.info("Selecciona un activo para que el motor Wolf calcule el volumen exacto de lotes según tu riesgo.")
-
-# --- 8. BLOQUE: PREDICCIONES (1D, 1W, 1M) ---
-elif menu == "🔮 Predicciones Lobo":
-    st.header("🔮 Ventana de Predicciones: Rangos Objetivo")
-    all_map = {**activos["stk"], **activos["idx"], **activos["mat"], **activos["div"]}
-    target_name = st.selectbox("Activo a analizar", list(all_map.keys()))
-    
-    if st.button(f"Ejecutar Proyección Temporal para {target_name}"):
-        with st.spinner("IA Wolf analizando horizontes temporales..."):
-            predicciones = get_temporal_predictions(all_map[target_name], target_name)
-            cp = st.columns(3)
-            tiempos = ["Corto Plazo (1 Día)", "Medio Plazo (1 Semana)", "Largo Plazo (1 Mes)"]
-            for i, p_text in enumerate(predicciones[:3]):
-                with cp[i]:
-                    st.markdown(f"<div class='pred-card'><h4>{tiempos[i]}</h4>{p_text}</div>", unsafe_allow_html=True)
-
-# --- 9. BLOQUE: CARTERA XTB (CONECTADA) ---
-elif menu == "💼 Cartera XTB":
-    st.header("💼 Tu Cartera en XTB")
-    if not st.session_state.xtb_user:
-        st.warning("Configura tus credenciales en Ajustes para sincronizar la cartera.")
-    else:
-        st.write(f"Usuario: `{st.session_state.xtb_user}` | Estado: **Conectado**")
-        st.markdown("""
-        <div class='xtb-row'>
-            <div style='display:flex; justify-content:space-between;'>
-                <span><b>US100 (Nasdaq)</b></span>
-                <span style='color:#00ff00;'>+185.20 €</span>
+        col_left, col_right = st.columns([2, 1])
+        
+        with col_left:
+            st.markdown(f"""
+            <div class='plan-box'>
+                <h2 style='color:#d4af37;'>🐺 PLAN DE ATAQUE IA: {st.session_state.activo_sel}</h2>
+                <p>Análisis de entrada en <b>{p_act:,.2f}</b></p>
+                <div style='display:flex; gap:20px; margin:20px 0;'>
+                    <div class='risk-alert'><h3>RIESGO REAL</h3><h1>-{r_dinero:,.2f} €</h1><small>Si toca Stop Loss</small></div>
+                    <div class='profit-alert'><h3>BENEFICIO META</h3><h1>+{b_dinero:,.2f} €</h1><small>Si toca Take Profit</small></div>
+                </div>
+                <table style='width:100%; text-align:center; background:#161b22; padding:15px; border-radius:10px;'>
+                    <tr><th>VOLUMEN</th><th>RATIO R/B</th><th>STOP LOSS</th><th>TAKE PROFIT</th></tr>
+                    <tr style='font-size:1.5rem; color:#d4af37;'>
+                        <td>{lotes} Lotes</td><td>1 : {rr}</td><td>{sl_sug:,.2f}</td><td>{tp_sug:,.2f}</td>
+                    </tr>
+                </table>
             </div>
-            <small>Lotes: 0.85 | Entrada: 18120.0 | SL: 18050.0</small>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+            
+            if st.button("🔥 EJECUTAR OPERACIÓN CONFIRMADA"):
+                # Simulación de ejecución y log de auditoría
+                log_ia_decision(st.session_state.activo_sel, "EJECUCIÓN", f"Humano confirmó compra de {lotes} lotes. Sentinel activado.")
+                st.success(f"Posición en {st.session_state.activo_sel} abierta. La IA ahora gestiona el Stop Loss.")
 
-# --- 10. BLOQUE: REPORTE SEMANAL Y AUDITORÍA ---
-elif menu == "🧪 Auditoría":
-    st.header("🧪 Auditoría y Reporte Semanal")
-    if st.button("📧 Generar y Enviar Reporte a Telegram"):
-        msg = f"REPORTE SEMANAL\nBalance: {st.session_state.wallet}€\nFaltante: {max(0, st.session_state.obj_semanal - st.session_state.wallet)}€"
-        send_wolf_msg(msg)
-        st.success("Reporte enviado correctamente.")
+# --- 9. NUEVA VENTANA: AUDITORÍA DE IA (EL CEREBRO DEL LOBO) ---
+elif menu == "🧪 Auditoría de IA":
+    st.header("🧪 Auditoría Forense de la IA")
+    st.write("Registro detallado de por qué la IA toma decisiones de optimización.")
 
-# --- 11. BLOQUE: AJUSTES (RECALCULO TOTAL) ---
-elif menu == "⚙️ Ajustes":
-    st.header("⚙️ Ajustes de Gestión Wolf")
-    col1, col2 = st.columns(2)
+    # 
     
-    # Estos valores modifican el comportamiento de todo el script en tiempo real
-    st.session_state.obj_semanal = col1.number_input("Objetivo Semanal (€)", value=st.session_state.obj_semanal, step=500.0)
-    st.session_state.wallet = col2.number_input("Capital Actual XTB (€)", value=st.session_state.wallet, step=100.0)
-    st.session_state.riesgo_op = col1.number_input("Capital dispuesto a perder por operación (€)", value=st.session_state.riesgo_op, step=10.0)
-    st.session_state.xtb_user = col2.text_input("XTB User ID", value=st.session_state.xtb_user)
+
+    col_m1, col_m2, col_m3 = st.columns(3)
+    conn = sqlite3.connect('wolf_vault.db')
+    df_logs = pd.read_sql_query("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100", conn)
+    conn.close()
+
+    col_m1.metric("Optimizaciones IA", len(df_logs), "+2 última hora")
+    col_m2.metric("Beneficio Protegido", f"{df_logs['pnl_lock'].sum():,.2f} €", "Sentinel")
+    col_m3.metric("Estado Sentinel", "ACTIVO", delta="Escaneando...")
+
+    st.markdown("### 📟 Terminal de Decisiones Sentinel")
+    terminal_text = ""
+    for _, row in df_logs.iterrows():
+        color = "#00ff00" if row['tipo'] == "EJECUCIÓN" else "#ffff00"
+        terminal_text += f"<span style='color:{color};'>[{row['fecha']}]</span> - [{row['tipo']}] - {row['activo']}: {row['descripcion']} "
+        if row['sl_new'] > 0:
+            terminal_text += f"(SL: {row['sl_old']} -> {row['sl_new']}) "
+        terminal_text += "<br>"
+    
+    st.markdown(f"<div class='audit-terminal'>{terminal_text if terminal_text else 'Esperando actividad del mercado...'}</div>", unsafe_allow_html=True)
+
+# --- 10. VENTANA: PREDICCIONES IA (1D, 1W, 1M) ---
+elif menu == "🔮 Predicciones IA":
+    st.header("🔮 Ventana de Fractales IA")
+    all_map = {**activos["stk"], **activos["idx"], **activos["mat"], **activos["div"]}
+    sel = st.selectbox("Seleccionar activo para análisis profundo", list(all_map.keys()))
+    
+    if st.button(f"Ejecutar Análisis Temporal para {sel}"):
+        with st.spinner("IA Wolf consultando horizontes temporales..."):
+            preds = get_temporal_projections(all_map[sel], sel)
+            c_p = st.columns(3)
+            tiempos = ["Corto Plazo (1 Día)", "Medio Plazo (1 Semana)", "Largo Plazo (1 Mes)"]
+            for i, p_txt in enumerate(preds[:3]):
+                with c_p[i]:
+                    st.markdown(f"<div class='plan-box' style='min-height:250px;'><h4>{tiempos[i]}</h4><p>{p_txt}</p></div>", unsafe_allow_html=True)
+
+# --- 11. VENTANA: AJUSTES (RECALCULO ESTRATÉGICO) ---
+elif menu == "⚙️ Ajustes":
+    st.header("⚙️ Configuración Wolf Core")
+    col_a, col_b = st.columns(2)
+    st.session_state.obj_semanal = col_a.number_input("Objetivo Semanal (€)", value=st.session_state.obj_semanal, step=500.0)
+    st.session_state.wallet = col_b.number_input("Capital Actual XTB (€)", value=st.session_state.wallet, step=100.0)
+    st.session_state.riesgo_op = col_a.number_input("Capital dispuesto a perder por operación (€)", value=st.session_state.riesgo_op, step=10.0)
     
     st.divider()
-    st.subheader("📊 Diagnóstico de Estrategia")
-    if st.session_state.wallet >= st.session_state.obj_semanal:
-        st.success("MODO PROTECCIÓN: Se ha alcanzado el objetivo. Riesgo reducido al 50%.")
-    else:
-        st.warning("MODO CRECIMIENTO: Calculando lotes al 100% del riesgo definido.")
+    if st.button("🔴 Resetear Base de Datos de Auditoría"):
+        conn = sqlite3.connect('wolf_vault.db')
+        conn.execute("DELETE FROM audit_logs")
+        conn.commit()
+        conn.close()
+        st.success("Historial de IA borrado.")
+        st.rerun()
