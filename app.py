@@ -1,4 +1,3 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -9,8 +8,8 @@ from openai import OpenAI
 from datetime import datetime
 import re, os, requests
 
-# --- 1. CONFIGURACIÓN Y ESTILO (KPIs CREMA CLARO) ---
-st.set_page_config(page_title="Jacar Pro V82", layout="wide", page_icon="🐺")
+# --- 1. CONFIGURACIÓN Y ESTILO ---
+st.set_page_config(page_title="Jacar Pro V82.1", layout="wide", page_icon="🐺")
 
 TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
 TELEGRAM_CHAT_ID = "1296326413"
@@ -25,9 +24,8 @@ st.markdown("""
         border-radius: 12px !important;
         padding: 15px !important;
     }
-    [data-testid="stMetricLabel"] p { color: #5d4037 !important; font-weight: bold !important; font-size: 16px !important; }
-    [data-testid="stMetricValue"] div { color: #2e7d32 !important; font-weight: bold !important; }
-    
+    [data-testid="stMetricLabel"] p { color: #5d4037 !important; font-weight: bold !important; }
+    [data-testid="stMetricValue"] div { color: #2e7d32 !important; }
     .hot-zone {
         background: linear-gradient(90deg, #441111 0%, #1a0505 100%);
         border: 1px solid #ff4b4b; padding: 15px; border-radius: 10px; 
@@ -42,10 +40,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. PERSISTENCIA Y LIMPIEZA DE COLUMNAS ---
+# --- 2. FUNCIONES DE SOPORTE ---
 def safe_float(val):
     try:
-        if isinstance(val, (pd.Series, pd.Index)): val = val[0]
+        if isinstance(val, (pd.Series, pd.Index)): val = val.iloc[0] if hasattr(val, 'iloc') else val[0]
         return float(val)
     except: return 0.0
 
@@ -67,7 +65,6 @@ def guardar_datos(lista, archivo):
         try: os.remove(archivo)
         except: pass
 
-# Inicialización
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'riesgo_op' not in st.session_state: st.session_state.riesgo_op = 90.0
 if 'obj_semanal' not in st.session_state: st.session_state.obj_semanal = 750.0
@@ -114,9 +111,9 @@ def analizar_activo(t, n):
         return res
     except: return None
 
-# --- 4. INTERFAZ ---
+# --- 4. INTERFAZ PRINCIPAL ---
 menu = st.sidebar.radio("🐺 MENU", ["🎯 Radar Lobo", "💼 Operaciones", "🧪 Backtesting", "📰 Noticias", "⚙️ Ajustes"])
-pnl_sem = sum(safe_float(op['pnl']) for op in st.session_state.historial)
+pnl_sem = sum(safe_float(op.get('pnl', 0)) for op in st.session_state.historial)
 falta_obj = st.session_state.obj_semanal - pnl_sem
 
 if menu == "🎯 Radar Lobo":
@@ -126,7 +123,7 @@ if menu == "🎯 Radar Lobo":
     c3.metric("Falta Objetivo", f"{max(0, falta_obj):,.2f} €")
     c4.metric("Status", "TRAILING ON")
 
-    st.markdown('<div class="hot-zone">🔥 <b>ZONA CALIENTE:</b> Nasdaq (Varianza alta), Oro (Soporte clave) y Bitcoin (Ruptura).</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hot-zone">🔥 <b>ZONA CALIENTE:</b> Nasdaq (Varianza), Oro (Soporte) y Bitcoin (Ruptura).</div>', unsafe_allow_html=True)
 
     t_cat = st.tabs(["📊 Indices", "🏗️ Material", "💱 Divisas", "📈 Stocks"])
     
@@ -142,14 +139,17 @@ if menu == "🎯 Radar Lobo":
         sub1, sub2 = st.tabs(["🇺🇸 EE.UU", "🇪🇺 Europa"])
         with sub1: grid_lobo({"🏙️ Nasdaq":"NQ=F", "🏢 S&P 500":"ES=F", "🏭 Dow":"YM=F", "🌱 Russell 2000":"RTY=F"}, "idx_u")
         with sub2: grid_lobo({"🥨 DAX 40":"^GDAXI", "🥘 IBEX 35":"^IBEX", "🗼 CAC 40":"^FCHI", "🇬🇧 FTSE 100":"^FTSE"}, "idx_e")
-    with t_cat[1]: # MATERIAL (Subcategorías)
+    
+    with t_cat[1]: # MATERIAL
         m1, m2, m3 = st.tabs(["💎 Metales", "🔥 Energía", "🌾 Agrícolas"])
         with m1: grid_lobo({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🥉 Cobre":"HG=F", "⚪ Platino":"PL=F"}, "mat_m")
         with m2: grid_lobo({"🛢️ Brent":"BZ=F", "⛽ WTI":"CL=F", "💨 Gas Nat":"NG=F", "⚡ Gasoil":"HO=F"}, "mat_e")
         with m3: grid_lobo({"☕ Café":"KC=F", "🪵 Trigo":"ZW=F", "🌽 Maíz":"ZC=F", "🍫 Cacao":"CC=F"}, "mat_a")
+    
     with t_cat[2]: grid_lobo({"💶 EUR/USD":"EURUSD=X", "💷 GBP/USD":"GBPUSD=X", "💴 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD", "💠 Solana":"SOL-USD"}, "div")
+    
     with t_cat[3]: # STOCKS
-    s1, s2, s3 = st.tabs(["🔥 Alpha", "💻 Tech", "🥘 España"])
+        s1, s2, s3 = st.tabs(["🔥 Alpha", "💻 Tech", "🥘 España"])
         with s1: grid_lobo({"🚀 MSTR":"MSTR", "💎 COIN":"COIN", "🧠 PLTR":"PLTR", "⚡ SMCI":"SMCI"}, "stk_a")
         with s2: grid_lobo({"🍎 Apple":"AAPL", "🎮 Nvidia":"NVDA", "🚗 Tesla":"TSLA", "🔍 Google":"GOOGL", "📦 Amazon":"AMZN", "♾️ Meta":"META"}, "stk_t")
         with s3: grid_lobo({"👗 Inditex":"ITX.MC", "🔌 Iberdrola":"IBE.MC", "🏦 Santander":"SAN.MC", "🏦 BBVA":"BBVA.MC", "🏗️ ACS":"ACS.MC"}, "stk_e")
@@ -164,7 +164,9 @@ if menu == "🎯 Radar Lobo":
     if not df.empty:
         df['EMA_20'] = ta.ema(df['Close'], length=20)
         df['RSI'] = ta.rsi(df['Close'], length=14)
-        p_act, v_max, v_min = safe_float(df['Close'].iloc[-1]), safe_float(df['High'].max()), safe_float(df['Low'].min())
+        p_act = safe_float(df['Close'].iloc[-1])
+        v_max = safe_float(df['High'].max())
+        v_min = safe_float(df['Low'].min())
         st.subheader(f"📊 {st.session_state.activo_sel} | Actual: {p_act:,.2f} | Máx: {v_max:,.2f} | Mín: {v_min:,.2f}")
         
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03)
@@ -188,11 +190,11 @@ if menu == "🎯 Radar Lobo":
                     with st.container(border=True):
                         st.markdown(f"**{t.upper()} ({s['prob']}%)**")
                         st.markdown(f"<h3 style='color:{color}; margin:0;'>{s['accion']}</h3>", unsafe_allow_html=True)
-                        lotes = calcular_lotes(ana['p_act'], s['sl'])
-                        st.write(f"💰 **Lotes:** {lotes} | **TP:** {s['tp']} | **SL:** {s['sl']}")
+                        l_calc = calcular_lotes(ana['p_act'], s['sl'])
+                        st.write(f"💰 **Lotes:** {l_calc} | **TP:** {s['tp']} | **SL:** {s['sl']}")
                         st.caption(f"💡 {s['why']}")
                         if st.button(f"Abrir {t.upper()}", key=f"btn_{t}"):
-                            st.session_state.cartera_abierta.append({"id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel, "tipo": s['accion'], "lotes": lotes, "entrada": ana['p_act'], "tp": s['tp'], "sl": s['sl']})
+                            st.session_state.cartera_abierta.append({"id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel, "tipo": s['accion'], "lotes": l_calc, "entrada": ana['p_act'], "tp": s['tp'], "sl": s['sl']})
                             guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.success("Añadido")
 
 elif menu == "🧪 Backtesting":
@@ -202,7 +204,6 @@ elif menu == "🧪 Backtesting":
     if not df_bt.empty:
         df_bt['EMA'] = ta.ema(df_bt['Close'], 20)
         st.metric("Win Rate IA", "72%")
-        # Corregimos el error de KeyError asegurando que las columnas existen
         chart_data = df_bt[['Close', 'EMA']].copy()
         st.line_chart(chart_data)
 
@@ -211,8 +212,8 @@ elif menu == "💼 Operaciones":
     if st.session_state.cartera_abierta:
         for i, pos in enumerate(list(st.session_state.cartera_abierta)):
             with st.expander(f"📌 {pos['activo']} | {pos['tipo']}"):
-                p_act = st.number_input("Precio Mercado", value=safe_float(pos['entrada']), key=f"p_{pos['id']}")
-                pnl = (p_act - safe_float(pos['entrada'])) * safe_float(pos['lotes']) * 100 if "COMPRA" in str(pos['tipo']).upper() else (safe_float(pos['entrada']) - p_act) * safe_float(pos['lotes']) * 100
+                p_mer = st.number_input("Precio Mercado", value=safe_float(pos['entrada']), key=f"p_{pos['id']}")
+                pnl = (p_mer - safe_float(pos['entrada'])) * safe_float(pos['lotes']) * 100 if "COMPRA" in str(pos['tipo']).upper() else (safe_float(pos['entrada']) - p_mer) * safe_float(pos['lotes']) * 100
                 st.write(f"PnL: **{pnl:,.2f} €**")
                 if st.button("Cerrar", key=f"c_{pos['id']}"):
                     st.session_state.historial.append({"fecha": datetime.now().strftime("%d/%m"), "activo": pos['activo'], "pnl": pnl})
@@ -224,3 +225,4 @@ elif menu == "⚙️ Ajustes":
     st.header("⚙️ Configuración")
     st.session_state.wallet = st.number_input("Balance", value=safe_float(st.session_state.wallet))
     st.session_state.obj_semanal = st.number_input("Objetivo Semanal", value=safe_float(st.session_state.obj_semanal))
+    st.write(f"Diferencia objetivo: **{falta_obj:,.2f} €**")
