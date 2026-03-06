@@ -8,8 +8,8 @@ from openai import OpenAI
 from datetime import datetime
 import re, os, requests
 
-# --- 1. CONFIGURACIÓN Y ESTILO (KPIs EN UNA LÍNEA) ---
-st.set_page_config(page_title="Jacar Pro V87", layout="wide", page_icon="🐺")
+# --- 1. CONFIGURACIÓN Y ESTILO ---
+st.set_page_config(page_title="Jacar Pro V87.2", layout="wide", page_icon="🐺")
 
 TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
 TELEGRAM_CHAT_ID = "1296326413"
@@ -38,6 +38,9 @@ st.markdown("""
         border-left: 5px solid #d4af37; margin-bottom: 10px;
         color: #5d4037 !important;
     }
+    .plan-box {
+        border: 1px solid #444; padding: 15px; border-radius: 10px; background-color: #161b22;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -63,7 +66,7 @@ def guardar_datos(lista, archivo):
     if lista: pd.DataFrame(lista).to_csv(archivo, index=False)
     elif os.path.exists(archivo): os.remove(archivo)
 
-# Inicialización
+# Inicialización de estados
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'riesgo_op' not in st.session_state: st.session_state.riesgo_op = 90.0
 if 'obj_semanal' not in st.session_state: st.session_state.obj_semanal = 750.0
@@ -79,19 +82,37 @@ def analizar_activo(t, n):
     try:
         df = yf.download(t, period="1mo", interval="1h", progress=False)
         df = fix_columns(df)
+        if df.empty: return None
         p_act = round(safe_float(df['Close'].iloc[-1]), 2)
-        prompt = f"Analiza {n} a {p_act}. Dame 3 planes: CORTOPLAZO, MEDIOPLAZO, LARGOPLAZO. Formato: TAG: [Prob]% | [COMPRA/VENTA] | [SL] | [TP] | [FUNDAMENTO]"
-        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.5)
+        
+        prompt = f"Analiza {n} a {p_act}. Dame 3 planes exactos: CORTOPLAZO, MEDIOPLAZO, LARGOPLAZO. Formato estricto por linea: TAG: [Prob]% | [COMPRA/VENTA] | [SL] | [TP] | [FUNDAMENTO]"
+        
+        resp = client.chat.completions.create(
+            model="gpt-4o", 
+            messages=[{"role": "user", "content": prompt}], 
+            temperature=0.7
+        )
+        
         lines = resp.choices[0].message.content.split('\n')
         res = {"p_act": p_act}
+        
         for tag in ["CORTOPLAZO", "MEDIOPLAZO", "LARGOPLAZO"]:
             for l in lines:
                 if tag in l.upper() and '|' in l:
                     parts = [p.strip() for p in l.split('|')]
                     prob = int(re.search(r'\d+', parts[0]).group())
-                    res[tag.lower()] = {"prob": prob, "accion": parts[1], "p_act": p_act, "sl": safe_float(re.sub(r'[^\d.]','',parts[2])), "tp": safe_float(re.sub(r'[^\d.]','',parts[3])), "why": parts[4]}
+                    res[tag.lower()] = {
+                        "prob": prob, 
+                        "accion": parts[1], 
+                        "p_act": p_act, 
+                        "sl": safe_float(re.sub(r'[^\d.]','',parts[2])), 
+                        "tp": safe_float(re.sub(r'[^\d.]','',parts[3])), 
+                        "why": parts[4]
+                    }
         return res
-    except: return None
+    except Exception as e:
+        st.error(f"Error IA: {e}")
+        return None
 
 # --- 4. INTERFAZ ---
 menu = st.sidebar.radio("🐺 MENU", ["🎯 Radar Lobo", "💼 Operaciones", "🧪 Backtesting", "📰 Noticias", "⚙️ Ajustes"])
@@ -99,25 +120,29 @@ pnl_sem = sum(safe_float(op.get('pnl', 0)) for op in st.session_state.historial)
 falta_obj = st.session_state.obj_semanal - pnl_sem
 
 if menu == "🎯 Radar Lobo":
+    # KPIs en una línea
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Balance", f"{st.session_state.wallet:,.0f}€")
     k2.metric("Riesgo/Op", f"{st.session_state.riesgo_op:,.0f}€")
     k3.metric("Falta Obj", f"{max(0, falta_obj):,.0f}€")
-    k4.metric("Status IA", "FULL SCAN")
+    k4.metric("Status IA", "ACTIVE SCAN")
 
     st.markdown('<div class="hot-zone">🔥 <b>ZONA CALIENTE:</b> Activos en ruptura. Haz clic para saltar:</div>', unsafe_allow_html=True)
     cz1, cz2, cz3 = st.columns(3)
     if cz1.button("🏙️ Nasdaq (Agresivo)", use_container_width=True): 
         st.session_state.ticker_sel, st.session_state.activo_sel = "NQ=F", "Nasdaq"
-        st.session_state.analisis_auto = analizar_activo("NQ=F", "Nasdaq"); st.rerun()
+        st.session_state.analisis_auto = analizar_activo("NQ=F", "Nasdaq")
+        st.rerun()
     if cz2.button("🥇 Oro (Seguro)", use_container_width=True): 
         st.session_state.ticker_sel, st.session_state.activo_sel = "GC=F", "Oro"
-        st.session_state.analisis_auto = analizar_activo("GC=F", "Oro"); st.rerun()
+        st.session_state.analisis_auto = analizar_activo("GC=F", "Oro")
+        st.rerun()
     if cz3.button("₿ Bitcoin (Crypto)", use_container_width=True): 
         st.session_state.ticker_sel, st.session_state.activo_sel = "BTC-USD", "Bitcoin"
-        st.session_state.analisis_auto = analizar_activo("BTC-USD", "Bitcoin"); st.rerun()
+        st.session_state.analisis_auto = analizar_activo("BTC-USD", "Bitcoin")
+        st.rerun()
 
-    # --- CATEGORÍAS Y SUBCATEGORÍAS ---
+    # TABS DE CATEGORÍAS Y SUBCATEGORÍAS
     t_cat = st.tabs(["📊 Indices", "🏗️ Material", "divisas", "📈 Stocks"])
     
     def grid_lobo(d, p):
@@ -125,7 +150,8 @@ if menu == "🎯 Radar Lobo":
         for i, (n, t) in enumerate(d.items()):
             if cols[i % 4].button(n, key=f"{p}_{t}", use_container_width=True):
                 st.session_state.ticker_sel, st.session_state.activo_sel = t, n
-                st.session_state.analisis_auto = analizar_activo(t, n); st.rerun()
+                st.session_state.analisis_auto = analizar_activo(t, n)
+                st.rerun()
 
     with t_cat[0]: # INDICES
         sub1, sub2 = st.tabs(["🇺🇸 EE.UU", "🇪🇺 Europa"])
@@ -151,12 +177,11 @@ if menu == "🎯 Radar Lobo":
 
     st.divider()
 
-    # --- GRÁFICO CON RANGOS ESPECÍFICOS ---
+    # RANGOS TEMPORALES
     c_t1, c_t2 = st.columns(2)
     p_sel = c_t1.selectbox("Rango Temporal", ["1h", "6h", "12h", "1d", "5d"], index=4)
     i_sel = c_t2.selectbox("Velas", ["1m", "5m", "15m", "1h", "1d"], index=2)
 
-    # Mapeo de rangos para yfinance
     r_map = {"1h":"1h", "6h":"1d", "12h":"1d", "1d":"1d", "5d":"5d"}
     df = fix_columns(yf.download(st.session_state.ticker_sel, period=r_map[p_sel], interval=i_sel, progress=False))
     
@@ -166,6 +191,9 @@ if menu == "🎯 Radar Lobo":
         p_act, v_max, v_min = safe_float(df['Close'].iloc[-1]), safe_float(df['High'].max()), safe_float(df['Low'].min())
         
         st.subheader(f"📊 {st.session_state.activo_sel} | Actual: {p_act:,.2f}")
+        
+        # EL GRÁFICO (RSI, EMA, Soporte/Resistencia)
+        
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03)
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='orange', width=1.5), name="EMA 20"), row=1, col=1)
@@ -173,51 +201,61 @@ if menu == "🎯 Radar Lobo":
         fig.add_hline(y=v_min, line_dash="dot", line_color="green", row=1, col=1)
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Volumen"), row=2, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple'), name="RSI"), row=3, col=1)
-        fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False)
+        fig.update_layout(height=650, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    # --- PLANES ESTRATÉGICOS (SIEMPRE VISIBLES) ---
-    if not st.session_state.analisis_auto:
-        st.session_state.analisis_auto = analizar_activo(st.session_state.ticker_sel, st.session_state.activo_sel)
-    
+    # --- LÓGICA DE PLANES (CORRECCIÓN DE VISIBILIDAD) ---
     st.write("### ⚔️ Planes Estratégicos IA")
+    
+    # Si por alguna razón el análisis es nulo, lo forzamos aquí antes de pintar
+    if st.session_state.analisis_auto is None:
+        with st.spinner("Generando planes tácticos..."):
+            st.session_state.analisis_auto = analizar_activo(st.session_state.ticker_sel, st.session_state.activo_sel)
+    
     ana = st.session_state.analisis_auto
-    cp1, cp2, cp3 = st.columns(3)
-    for idx, t in enumerate(["cortoplazo", "medioplazo", "largoplazo"]):
-        if t in ana:
-            s = ana[t]
-            color = "#ff4b4b" if "VENTA" in s['accion'].upper() else "#28a745"
-            with [cp1, cp2, cp3][idx]:
-                with st.container(border=True):
-                    st.markdown(f"**{t.upper()} ({s['prob']}%)**")
-                    st.markdown(f"<h3 style='color:{color};'>{s['accion']}</h3>", unsafe_allow_html=True)
-                    st.write(f"🛑 SL: {s['sl']} | ✅ TP: {s['tp']}")
-                    st.caption(f"💡 {s['why']}")
+    if ana:
+        cp1, cp2, cp3 = st.columns(3)
+        tags = [("cortoplazo", cp1), ("medioplazo", cp2), ("largoplazo", cp3)]
+        for key, col in tags:
+            if key in ana:
+                s = ana[key]
+                color = "#ff4b4b" if "VENTA" in s['accion'].upper() else "#28a745"
+                with col:
+                    st.markdown(f"""
+                    <div class="plan-box">
+                        <p style='margin:0; font-size:0.8rem; color:#888;'>{key.upper()} ({s['prob']}%)</p>
+                        <h3 style='color:{color}; margin:5px 0;'>{s['accion']}</h3>
+                        <p style='margin:0; font-size:0.9rem;'>🛑 SL: <b>{s['sl']}</b> | ✅ TP: <b>{s['tp']}</b></p>
+                        <hr style='border:0.1px solid #333;'>
+                        <p style='font-size:0.8rem; line-height:1.2; color:#bbb;'>{s['why']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+    else:
+        st.warning("IA en espera. Haz clic en un activo para despertar al lobo.")
 
 elif menu == "🧪 Backtesting":
-    st.header("🧪 Backtesting Comparativo")
+    st.header("🧪 Backtesting")
     st.metric("Win Rate Corto Plazo", "74%", "+150€")
-    st.metric("Win Rate Medio Plazo", "62%", "+280€")
     st.line_chart(fix_columns(yf.download(st.session_state.ticker_sel, period="1mo", progress=False))['Close'])
 
 elif menu == "📰 Noticias":
     st.header("📰 Inteligencia News")
-    # Noticias Dinámicas con botones de salto
     noticias = [
-        {"t": "Ruptura Institucional en Nasdaq", "d": "Flujo de capital detectado en niveles críticos.", "tk": "NQ=F", "n": "Nasdaq"},
-        {"t": "Oro: Refugio ante inflación", "d": "Los bancos centrales aumentan reservas.", "tk": "GC=F", "n": "Oro"},
+        {"t": "Ruptura Institucional en Nasdaq", "d": "Flujo detectado en niveles críticos.", "tk": "NQ=F", "n": "Nasdaq"},
+        {"t": "Oro: Refugio ante inflación", "d": "Bancos centrales aumentan reservas.", "tk": "GC=F", "n": "Oro"},
         {"t": "Bitcoin supera media de 200", "d": "Señal alcista confirmada en diario.", "tk": "BTC-USD", "n": "Bitcoin"},
-        {"t": "Inditex: Resultados récord", "d": "El sector retail español lidera Europa.", "tk": "ITX.MC", "n": "Inditex"}
+        {"t": "Inditex: Resultados récord", "d": "Lidera retail europeo.", "tk": "ITX.MC", "n": "Inditex"}
     ]
     for n in noticias:
         with st.container():
             st.markdown(f"""<div class="news-card"><h4>{n['t']}</h4><p>{n['d']}</p></div>""", unsafe_allow_html=True)
             if st.button(f"Analizar {n['n']} Ahora", key=n['t']):
                 st.session_state.ticker_sel, st.session_state.activo_sel = n['tk'], n['n']
-                st.session_state.analisis_auto = analizar_activo(n['tk'], n['n']); st.rerun()
+                st.session_state.analisis_auto = analizar_activo(n['tk'], n['n'])
+                st.rerun()
 
 elif menu == "⚙️ Ajustes":
-    st.header("⚙️ Configuración")
+    st.header("⚙️ Ajustes de Cuenta")
     st.session_state.wallet = st.number_input("Balance Cuenta (€)", value=safe_float(st.session_state.wallet))
     st.session_state.riesgo_op = st.number_input("Riesgo por Operación (€)", value=safe_float(st.session_state.riesgo_op))
     st.session_state.obj_semanal = st.number_input("Objetivo Semanal (€)", value=safe_float(st.session_state.obj_semanal))
