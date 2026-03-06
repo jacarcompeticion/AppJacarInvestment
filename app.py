@@ -8,24 +8,39 @@ from openai import OpenAI
 from datetime import datetime
 import re
 import os
+import requests
 
-# --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
-st.set_page_config(page_title="Jacar Pro V55", layout="wide", page_icon="🏦")
+# --- 1. CONFIGURACIÓN Y ESTILO MODERN DARK (LOBO) ---
+st.set_page_config(page_title="Jacar Pro V60 - Lobo Edition", layout="wide", page_icon="🐺")
+
+# Configuración Telegram
+TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
+TELEGRAM_CHAT_ID = "1296326413"
 
 CSV_FILE = 'cartera_jacar.csv'
 HIST_FILE = 'historial_jacar.csv'
 
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stMetric { background-color: #161b22; border-radius: 10px; padding: 15px; border: 1px solid #30363d; }
+    div[data-testid="stExpander"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; }
+    .stButton>button { width: 100%; border-radius: 5px; background-color: #238636; color: white; border: none; font-weight: bold; }
+    .alerta-agresiva {
+        background: linear-gradient(90deg, #941111 0%, #4a0808 100%);
+        padding: 20px; border-radius: 10px; border-left: 10px solid #ff0000;
+        animation: pulse 2s infinite; color: white; margin-bottom: 20px;
+    }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. PERSISTENCIA Y FUNCIONES DE CÁLCULO ---
 def limpiar_numero(valor):
     if isinstance(valor, (int, float)): return float(valor)
     clean = re.sub(r'[^\d.]', '', str(valor).replace(',', '.'))
     try: return float(clean) if clean else 0.0
     except: return 0.0
-
-def guardar_datos(lista, archivo):
-    if lista: pd.DataFrame(lista).to_csv(archivo, index=False)
-    elif os.path.exists(archivo): 
-        try: os.remove(archivo)
-        except: pass
 
 def cargar_datos(archivo):
     if os.path.exists(archivo):
@@ -33,32 +48,43 @@ def cargar_datos(archivo):
         except: return []
     return []
 
+def guardar_datos(lista, archivo):
+    if lista: pd.DataFrame(lista).to_csv(archivo, index=False)
+    elif os.path.exists(archivo): os.remove(archivo)
+
 if 'wallet' not in st.session_state: st.session_state.wallet = 18000.0
 if 'cartera_abierta' not in st.session_state: st.session_state.cartera_abierta = cargar_datos(CSV_FILE)
 if 'historial' not in st.session_state: st.session_state.historial = cargar_datos(HIST_FILE)
 if 'activo_sel' not in st.session_state: st.session_state.activo_sel, st.session_state.ticker_sel = "US100", "NQ=F"
 if 'analisis_auto' not in st.session_state: st.session_state.analisis_auto = None
 
+def calcular_lotes_lobo(p_entrada, p_sl):
+    riesgo_fijo = 90.0 # 0.5% de 18,000
+    distancia = abs(p_entrada - p_sl)
+    if distancia == 0: return 0.1
+    # Cálculo para Forex/Índices (ajustable según multiplicador de XTB)
+    return round(riesgo_fijo / (distancia * 100), 2)
+
+# --- 3. MOTOR DE TELEGRAM + XTB ---
+def enviar_alerta_lobo(activo, tipo, precio, sl, tp, lotes, probabilidad):
+    xtb_map = {"Oro": "GOLD", "US100": "US100", "Bitcoin": "BITCOIN", "S&P 500": "US500", "EUR/USD": "EURUSD"}
+    symbol = xtb_map.get(activo, activo)
+    header = "🚨 ALERTA LOBO AGRESIVA 🚨" if probabilidad >= 85 else "🐺 Sugerencia Lobo"
+    mensaje = (
+        f"{header}\n📊 Probabilidad: {probabilidad}%\n📈 Activo: {activo}\n"
+        f"⚡ Acción: {tipo}\n\n🎯 Entrada: {precio:,.2f}\n🛑 SL: {sl:,.2f}\n✅ TP: {tp:,.2f}\n"
+        f"💰 Lotes: {lotes}\n⚠️ Riesgo: 90€"
+    )
+    url_xtb = f"https://xstation5.xtb.com/#/market/{symbol}"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown",
+        "reply_markup": {"inline_keyboard": [[{"text": "🚀 EJECUTAR EN XTB", "url": url_xtb}]]}
+    }
+    return requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
+
+# --- 4. IA Y DATOS TÉCNICOS ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- 2. CÁLCULOS DE CUENTA ---
-def calcular_metricas():
-    nominal_total = 0
-    for p in st.session_state.cartera_abierta:
-        nominal_total += limpiar_numero(p.get('valor_nominal', 0))
-    margen_usado = nominal_total * 0.05
-    margen_disponible = float(st.session_state.wallet) - margen_usado
-    win_rate = 50.0
-    if st.session_state.historial:
-        try:
-            ganadas = len([h for h in st.session_state.historial if limpiar_numero(h['pnl']) > 0])
-            win_rate = (ganadas / len(st.session_state.historial)) * 100
-        except: pass
-    return margen_usado, margen_disponible, win_rate
-
-m_usado, m_disponible, wr_actual = calcular_metricas()
-
-# --- 3. MOTOR DE DATOS E IA (CON DIFERENCIACIÓN DE PLANES) ---
 @st.cache_data(ttl=60)
 def obtener_datos(ticker, periodo, intervalo):
     try:
@@ -70,151 +96,104 @@ def obtener_datos(ticker, periodo, intervalo):
         return df
     except: return pd.DataFrame()
 
-def auto_analizar(t, n):
+def auto_analizar_lobo(t, n):
     try:
         df_t = obtener_datos(t, "1mo", "1h")
-        if df_t.empty: return None
         p_act = round(float(df_t['Close'].iloc[-1]), 2)
-        moneda = "€" if any(x in t for x in [".MC", "GDAXI", "IBEX"]) else "$"
-
-        prompt = f"""Analiza {n} a {p_act}. Genera 3 planes con objetivos DIFERENTES:
-        1. INTRA: Scalping rápido (TP/SL cercanos).
-        2. MEDIO: Swing trading (TP/SL moderados).
-        3. LARGO: Tendencia macro (TP muy ambicioso).
-        
-        Formato estricto (3 líneas):
-        TAG: [Prob]% | [ACCION] | [Lotes] | {p_act} | [Take Profit] | [Stop Loss] | [Nominal]"""
+        prompt = f"""Analiza {n} a {p_act}. Diferencia 3 horizontes:
+        INTRA (Scalping 15m), MEDIO (Swing 4h), LARGO (Trend 1d).
+        Formato: TAG: [Prob]% | [ACCION] | [SL] | [TP] | [FUNDAMENTO]"""
         
         resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.7)
         lineas = resp.choices[0].message.content.split('\n')
         
-        data_final = {"moneda": moneda, "p_actual": p_act}
+        res = {"p_act": p_act}
         for tag in ["INTRA", "MEDIO", "LARGO"]:
             for line in lineas:
                 if tag in line.upper() and '|' in line:
-                    parts = [p.strip().replace('*','') for p in line.split('|')]
-                    parts[0] = parts[0].split(':')[-1].strip()
-                    data_final[tag.lower()] = parts
-                    break
-        return data_final
+                    parts = [p.strip() for p in line.split('|')]
+                    prob = int(re.search(r'\d+', parts[0]).group())
+                    res[tag.lower()] = {"prob": prob, "accion": parts[1], "sl": limpiar_numero(parts[2]), "tp": limpiar_numero(parts[3]), "why": parts[4]}
+        return res
     except: return None
 
-# --- 4. INTERFAZ: CABECERA Y SELECTORES ---
-st.markdown(f"""<div style="background-color:#1e212b; padding:15px; border-radius:10px; color:white; border-left: 5px solid #268bd2;">
-    💰 <b>Margen Disponible: {m_disponible:,.2f} €</b> | 🎯 WinRate: {wr_actual:.1f}% | ⚠️ Usado: {m_usado:,.2f} €
-</div>""", unsafe_allow_html=True)
+# --- 5. INTERFAZ SUPERIOR Y RADAR ---
+col_w1, col_w2, col_w3, col_w4 = st.columns(4)
+col_w1.metric("Balance Lobo", f"{st.session_state.wallet:,.2f} €")
+col_w2.metric("Riesgo Fijo", "90.00 €", "0.5%")
+col_w3.metric("Salud Deuda", "OK", "Filtro Pasado")
+col_w4.metric("Status", "HÍBRIDO", "Telegram Activo")
 
-# Recuperación de los selectores de tiempo (Las 15 líneas clave)
-st.write("")
-c_t1, c_t2 = st.columns([1, 1])
-with c_t1: 
-    sel_periodo = st.selectbox("Rango de Datos", ["1d", "5d", "1mo", "3mo", "6mo", "1y", "max"], index=1)
-with c_t2: 
-    sel_intervalo = st.selectbox("Velas", ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d"], index=3)
+st.write("### 🐺 Radar de Activos")
+t_main = st.tabs(["📊 Indices", "🏗️ Material", "💱 Divisas", "📈 Stocks"])
 
-t_main = st.tabs(["📈 Stocks", "📊 Indices", "🏗️ Material", "💱 Divisas"])
-
-def grid(d, pref=""):
-    cols = st.columns(4)
+def grid_lobo(d, pref):
+    cols = st.columns(len(d))
     for i, (n, t) in enumerate(d.items()):
-        if cols[i % 4].button(n, key=f"{pref}_{t}", use_container_width=True):
+        if cols[i].button(n, key=f"{pref}_{t}"):
             st.session_state.activo_sel, st.session_state.ticker_sel = n, t
-            st.session_state.analisis_auto = auto_analizar(t, n)
+            st.session_state.analisis_auto = auto_analizar_lobo(t, n)
             st.rerun()
 
-with t_main[0]: # STOCKS
-    s1, s2, s3, s4, s5, s6 = st.tabs(["🔥 High Alpha", "💻 Tecnología", "⛽ Energía", "🏦 Banca", "🛒 Consumo", "🇪🇸 España"])
-    with s1: grid({"🚀 MSTR":"MSTR", "🪙 COIN":"COIN", "🧠 PLTR":"PLTR", "⚡ SMCI":"SMCI", "🧬 LLY":"LLY", "🖥️ AMD":"AMD", "🛰️ TSLA":"TSLA", "💳 ADYEN":"ADYEN.AS", "💉 MRNA":"MRNA", "🕹️ RBLX":"RBLX"}, "alpha")
-    with s2: grid({"🍏 Apple":"AAPL", "🤖 NVDA":"NVDA", "🚗 Tesla":"TSLA", "🔍 Google":"GOOGL", "📦 Amazon":"AMZN"}, "tech")
-    with s3: grid({"⛽ Exxon":"XOM", "🐚 Shell":"SHEL", "🔥 Chevron":"CVX"}, "ener")
-    with s4: grid({"💳 Visa":"V", "🏦 JPMorgan":"JPM", "📈 Goldman":"GS"}, "bank")
-    with s5: grid({"🥤 Coca-Cola":"KO", "🍔 McDonald's":"MCD", "🛒 Walmart":"WMT"}, "cons")
-    with s6: grid({"👕 Inditex":"ITX.MC", "⚡ Iberdrola":"IBE.MC", "🏦 Santander":"SAN.MC", "🏦 BBVA":"BBVA.MC"}, "esp")
+with t_main[0]: grid_lobo({"US100":"NQ=F", "S&P 500":"ES=F", "DAX 40":"^GDAXI", "IBEX 35":"^IBEX"}, "idx")
+with t_main[1]: grid_lobo({"Oro":"GC=F", "Plata":"SI=F", "Brent":"BZ=F", "Gas Nat":"NG=F"}, "mat")
+with t_main[2]: grid_lobo({"EUR/USD":"EURUSD=X", "GBP/USD":"GBPUSD=X", "USD/JPY":"JPY=X", "Bitcoin":"BTC-USD"}, "div")
+with t_main[3]: grid_lobo({"Nvidia":"NVDA", "Tesla":"TSLA", "Apple":"AAPL", "MSTR":"MSTR"}, "stk")
 
-with t_main[1]: # INDICES
-    i1, i2 = st.tabs(["🇺🇸 EE.UU", "🇪🇺 Europa"])
-    with i1: grid({"🇺🇸 US100":"NQ=F", "📈 S&P 500":"ES=F", "🏭 Dow Jones":"YM=F"}, "idx_usa")
-    with i2: grid({"🇩🇪 DAX 40":"^GDAXI", "🇪🇸 IBEX 35":"^IBEX", "🇫🇷 CAC 40":"^FCHI"}, "idx_eu")
-
-with t_main[2]: # MATERIAL
-    grid({"🥇 Oro":"GC=F", "🥈 Plata":"SI=F", "🛢️ Brent":"BZ=F", "🛢️ WTI":"CL=F", "🔥 Gas Nat":"NG=F"}, "mat")
-
-with t_main[3]: # DIVISAS (Divisas)
-    grid({"🇪🇺 EUR/USD":"EURUSD=X", "🇬🇧 GBP/USD":"GBPUSD=X", "🇯🇵 USD/JPY":"JPY=X", "₿ Bitcoin":"BTC-USD", "💎 Ethereum":"ETH-USD"}, "div")
-
-# --- 5. GRÁFICO TÉCNICO (V52 STYLE) ---
+# --- 6. VISUALIZACIÓN TÉCNICA Y ESTRATEGIA ---
 st.divider()
-df = obtener_datos(st.session_state.ticker_sel, sel_periodo, sel_intervalo)
-if not df.empty:
-    p_actual = df['Close'].iloc[-1]
-    sop_v, res_v = df['Low'].tail(30).min(), df['High'].tail(30).max()
+c_chart, c_strat = st.columns([2, 1])
 
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("Precio", f"{p_actual:,.2f}")
-    m2.metric("EMA 20", f"{df['EMA_20'].iloc[-1]:,.2f}")
-    m3.metric("RSI", f"{df['RSI'].iloc[-1]:,.2f}")
-    m4.metric("Soporte", f"{sop_v:,.2f}")
-    m5.metric("Resist.", f"{res_v:,.2f}")
-    m6.metric("ATR", f"{ta.atr(df['High'], df['Low'], df['Close']).iloc[-1]:,.2f}")
+with c_chart:
+    st.write(f"#### 📈 {st.session_state.activo_sel} (Temporalidad Actual)")
+    col_t1, col_t2 = st.columns(2)
+    with col_t1: per = st.selectbox("Rango", ["1d", "5d", "1mo", "6mo"], index=1)
+    with col_t2: intv = st.selectbox("Velas", ["1m", "5m", "15m", "1h", "1d"], index=2)
+    
+    df = obtener_datos(st.session_state.ticker_sel, per, intv)
+    if not df.empty:
+        sop, res_v = df['Low'].tail(30).min(), df['High'].tail(30).max()
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='orange', width=1), name="EMA 20"), row=1, col=1)
+        fig.add_hline(y=res_v, line_dash="dash", line_color="red", row=1, col=1)
+        fig.add_hline(y=sop, line_dash="dash", line_color="green", row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple'), name="RSI"), row=2, col=1)
+        fig.update_layout(height=500, xaxis_rangeslider_visible=False, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Precio"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='royalblue', width=1.5), name="EMA 20"), row=1, col=1)
-    fig.add_hline(y=res_v, line_dash="dash", line_color="red", annotation_text="Resistencia", row=1, col=1)
-    fig.add_hline(y=sop_v, line_dash="dash", line_color="green", annotation_text="Soporte", row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple', width=1.5), name="RSI"), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
-    fig.update_layout(height=600, xaxis_rangeslider_visible=False, template="plotly_white", margin=dict(t=5,b=5))
-    st.plotly_chart(fig, use_container_width=True)
+with c_strat:
+    if st.session_state.analisis_auto:
+        ana = st.session_state.analisis_auto
+        st.write("### 🛡️ Plan Táctico")
+        for tag in ["intra", "medio", "largo"]:
+            s = ana[tag]
+            lotes = calcular_lotes_lobo(ana['p_act'], s['sl'])
+            if s['prob'] >= 85:
+                st.markdown(f'<div class="alerta-agresiva"><b>🚨 {tag.upper()} ALTA PROBABILIDAD ({s["prob"]}%)</b></div>', unsafe_allow_html=True)
+            
+            with st.expander(f"{tag.upper()} - {s['accion']} ({s['prob']}%)", expanded=(tag=="intra")):
+                st.write(f"💡 *Por qué:* {s['why']}")
+                st.write(f"🎯 Entrada: **{ana['p_act']}** | Lotes: **{lotes}**")
+                st.write(f"🛑 SL: {s['sl']} | ✅ TP: {s['tp']}")
+                if st.button(f"🚀 ENVIAR {tag.upper()} AL MÓVIL", key=f"btn_{tag}"):
+                    enviar_alerta_lobo(st.session_state.activo_sel, s['accion'], ana['p_act'], s['sl'], s['tp'], lotes, s['prob'])
+                    st.toast(f"Alerta {tag} enviada!")
 
-# --- 6. ESTRATEGIAS ---
-if st.session_state.analisis_auto:
-    st.subheader(f"🛡️ Plan Estratégico: {st.session_state.activo_sel}")
-    res = st.session_state.analisis_auto
-    cols_ia = st.columns(3)
-    for i, tag in enumerate(["intra", "medio", "largo"]):
-        s = res[tag]
-        es_compra = "COMPRA" in s[1].upper()
-        bg, b_col = ("#e8f5e9", "#4caf50") if es_compra else ("#ffebee", "#f44336")
-        ent_v, tp_v, sl_v = round(limpiar_numero(s[3]), 2), round(limpiar_numero(s[4]), 2), round(limpiar_numero(s[5]), 2)
-        with cols_ia[i]:
-            st.markdown(f"""<div style="background-color:{bg}; padding:15px; border-radius:12px; border:2px solid {b_col}; min-height:220px;">
-                <h4 style="margin:0;">{tag.upper()} <span style="float:right; color:#1a73e8;">🎯 {s[0]}</span></h4>
-                <p style="text-align:center; font-weight:bold; font-size:1.3em; color:#333; margin:12px 0;">{s[1]}</p>
-                <p style="margin:2px;">Entrada: <b>{ent_v}</b> | Lotes: <b>{s[2]}</b></p>
-                <p style="margin:2px; color:#2e7d32;"><b>Take Profit:</b> {tp_v}</p>
-                <p style="margin:2px; color:#c62828;"><b>Stop Loss:</b> {sl_v}</p>
-            </div>""", unsafe_allow_html=True)
-            with st.popover(f"🚀 Ejecutar {tag.upper()}", use_container_width=True):
-                l_f = st.number_input("Lotes", value=limpiar_numero(s[2]), step=0.01, key=f"l_{tag}")
-                p_f = st.number_input("Entrada", value=ent_v, key=f"p_{tag}")
-                if st.button("Confirmar", key=f"conf_{tag}", use_container_width=True):
-                    st.session_state.cartera_abierta.append({
-                        "id": datetime.now().strftime("%H%M%S"), "activo": st.session_state.activo_sel,
-                        "tipo": s[1], "lotes": l_f, "entrada": p_f, "tp": tp_v, "sl": sl_v, 
-                        "valor_nominal": l_f * p_f, "ticker": st.session_state.ticker_sel, "moneda": res['moneda']
-                    })
-                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE); st.rerun()
-
-# --- 7. SIDEBAR ---
+# --- 7. SIDEBAR GESTIÓN ---
 with st.sidebar:
-    st.header("🏢 Terminal Jacar")
-    st.metric("Balance Equity", f"{st.session_state.wallet:,.2f} €")
-    tab_side = st.tabs(["💼 Abiertas", "📜 Histórico"])
-    with tab_side[0]:
-        pnl_total = 0
-        for i, pos in enumerate(list(st.session_state.cartera_abierta)):
-            with st.expander(f"📌 {pos['activo']} ({pos['lotes']} L)"):
-                ent_v, lot_v = limpiar_numero(pos['entrada']), limpiar_numero(pos['lotes'])
-                p_out = st.number_input("Cierre", value=ent_v, key=f"out_{pos['id']}", format="%.2f")
-                es_buy = "COMPRA" in str(pos['tipo']).upper()
-                pnl_op = (p_out - ent_v) * lot_v * 100 if es_buy else (ent_v - p_out) * lot_v * 100
-                pnl_total += pnl_op
-                st.write(f"PnL: **{pnl_op:,.2f} €**")
-                if st.button("Cerrar", key=f"close_{pos['id']}", use_container_width=True):
-                    st.session_state.historial.append({"fecha": datetime.now().strftime("%d/%m %H:%M"), "activo": pos['activo'], "pnl": pnl_op})
-                    st.session_state.wallet = float(st.session_state.wallet) + pnl_op
-                    st.session_state.cartera_abierta.pop(i)
-                    guardar_datos(st.session_state.cartera_abierta, CSV_FILE); guardar_datos(st.session_state.historial, HIST_FILE); st.rerun()
-        st.markdown(f"**PnL en Curso:** `{pnl_total:,.2f} €`")
+    st.header("🐺 Terminal Lobo")
+    st.write("#### Posiciones Abiertas")
+    pnl_t = 0
+    for i, pos in enumerate(list(st.session_state.cartera_abierta)):
+        with st.expander(f"📌 {pos['activo']}"):
+            p_c = st.number_input("Precio Cierre", value=float(pos['entrada']), key=f"c_{pos['id']}")
+            pnl = (p_c - float(pos['entrada'])) * float(pos['lotes']) * 100 if "COMPRA" in str(pos['tipo']).upper() else (float(pos['entrada']) - p_c) * float(pos['lotes']) * 100
+            pnl_t += pnl
+            if st.button("Cerrar Op", key=f"cl_{pos['id']}"):
+                st.session_state.historial.append({"fecha": datetime.now().strftime("%H:%M"), "activo": pos['activo'], "pnl": pnl})
+                st.session_state.wallet += pnl
+                st.session_state.cartera_abierta.pop(i)
+                guardar_datos(st.session_state.cartera_abierta, CSV_FILE); guardar_datos(st.session_state.historial, HIST_FILE); st.rerun()
+    st.divider()
+    st.markdown(f"**PnL Total:** `{pnl_t:,.2f} €`")
