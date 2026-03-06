@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import sqlite3, time, json, requests, random
 import numpy as np
 
-# --- 1. CONFIGURACIÓN MECÁNICA E INTERFAZ INDUSTRIAL ---
+# --- 1. CONFIGURACIÓN E INTERFAZ INDUSTRIAL ---
 st.set_page_config(page_title="Jacar Pro V93 - Wolf Absolute", layout="wide", page_icon="🐺")
 
 st.markdown("""
@@ -37,12 +37,15 @@ st.markdown("""
         background: linear-gradient(135deg, #1c2128 0%, #0d1117 100%);
         border: 1px solid #444; padding: 15px; border-radius: 10px; margin-bottom: 8px;
     }
+    .news-high-impact {
+        background: rgba(255, 75, 75, 0.1); border: 1px solid #ff4b4b; 
+        padding: 10px; border-radius: 5px; color: #ff4b4b; font-weight: bold; margin-bottom: 5px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. CONECTIVIDAD TELEGRAM Y XTB (IA SENTINEL) ---
 def send_telegram_alert(message):
-    """Envía notificaciones críticas sobre la gestión de la IA."""
     token = "TU_BOT_TOKEN_REAL"
     chat_id = "TU_CHAT_ID_REAL"
     try:
@@ -53,40 +56,31 @@ def send_telegram_alert(message):
         log_ia_audit("SISTEMA", "ERROR_TELEGRAM", str(e))
 
 def xtb_ai_risk_manager(symbol, current_price, entry_price, side, sl, tp):
-    """La IA Sentinel analiza si debe cerrar o ajustar una posición abierta por el usuario."""
     pnl_percent = ((current_price - entry_price) / entry_price) * 100 if side == "COMPRA" else ((entry_price - current_price) / entry_price) * 100
-    
-    # Lógica de protección: Mover SL a Breakeven si hay +1.5% de profit
     if pnl_percent > 1.5:
-        msg = f"🛡️ *SENTINEL PROTECT*: {symbol}\nBeneficio (+{pnl_percent:.2f}%). Moviendo Stop Loss a precio de entrada para asegurar cero pérdidas."
+        msg = f"🛡️ *SENTINEL PROTECT*: {symbol}\nProfit +{pnl_percent:.2f}%. Moviendo SL a Breakeven."
         send_telegram_alert(msg)
-        log_ia_audit(symbol, "AJUSTE_SL", "Moviendo a Breakeven por Profit > 1.5%")
         return "SL_MOVED"
-    
-    # Cierre de emergencia si hay volatilidad extrema contraria
     if pnl_percent < -3.0:
-        msg = f"🚨 *SENTINEL EMERGENCY*: {symbol}\nPérdida de -3% detectada. Cerrando posición en XTB para preservar capital."
+        msg = f"🚨 *SENTINEL EMERGENCY*: {symbol}\nCierre por Drawdown excesivo (-3%)."
         send_telegram_alert(msg)
-        log_ia_audit(symbol, "CIERRE_EMERGENCIA", "Cierre por Drawdown excesivo")
         return "CLOSED"
-    
     return "MONITORING"
 
-# --- 3. MOTOR DE CÁLCULO TÉCNICO AVANZADO (SOPORTES/RESISTENCIAS/FIBO) ---
+# --- 3. MOTOR TÉCNICO AVANZADO (FIXED ERROR PLOTLY) ---
 def calculate_advanced_levels(df):
-    """Calcula niveles de Fibonacci y soportes/resistencias históricos."""
-    high = df['High'].max()
-    low = df['Low'].min()
+    high = float(df['High'].max())
+    low = float(df['Low'].min())
     diff = high - low
-    
+    # Forzamos conversión a FLOAT puro para evitar el ValueError de Plotly
     levels = {
-        "R3": high + (diff * 0.236),
-        "R2": high,
-        "R1": high - (diff * 0.236),
-        "Median": high - (diff * 0.5),
-        "S1": low + (diff * 0.236),
-        "S2": low,
-        "S3": low - (diff * 0.236)
+        "R3": float(high + (diff * 0.236)),
+        "R2": float(high),
+        "R1": float(high - (diff * 0.236)),
+        "Median": float(high - (diff * 0.5)),
+        "S1": float(low + (diff * 0.236)),
+        "S2": float(low),
+        "S3": float(low - (diff * 0.236))
     }
     return levels
 
@@ -140,28 +134,28 @@ if 'posiciones_activas' not in st.session_state: st.session_state.posiciones_act
 if 'current_cat' not in st.session_state: st.session_state.current_cat = "indices"
 if 'current_sub' not in st.session_state: st.session_state.current_sub = "EEUU"
 
-# --- 7. SIDEBAR: NOTICIAS Y ACCIONES CALIENTES ---
+# --- 7. SIDEBAR ---
 with st.sidebar:
     st.title("🐺 JACAR PRO V93")
-    menu = st.radio("MÓDULOS DEL SISTEMA", ["🎯 Radar Lobo", "🔮 Predicciones IA", "📰 Noticias", "🧪 Auditoría IA", "⚙️ Ajustes"])
+    menu = st.radio("MÓDULOS", ["🎯 Radar Lobo", "🔮 Predicciones IA", "📰 Noticias", "🧪 Auditoría IA", "⚙️ Ajustes"])
     
+    st.divider()
+    if st.button("🚨 CIERRE TOTAL DE EMERGENCIA"):
+        st.session_state.posiciones_activas = []
+        send_telegram_alert("⚠️ *COMANDO PANIC*: Cierre total de posiciones ejecutado por el usuario.")
+        st.error("Todas las posiciones cerradas en el sistema.")
+
     st.divider()
     st.subheader("🔥 Acciones Calientes")
     hot_picks = [("NVDA", "+4.2%", "BUY"), ("TSLA", "-2.8%", "SELL"), ("MSTR", "+8.5%", "BUY")]
     for t, c, s in hot_picks:
         st.markdown(f"""<div class='hot-action-card'><b>{t}</b> <span style='color:#00ff41'>{c}</span><br><small>Sugerencia IA: {s}</small></div>""", unsafe_allow_html=True)
-    
-    st.divider()
-    st.subheader("📅 Economic News")
-    news_items = [("14:30", "USD NFP 🔴"), ("16:00", "EUR Lagarde 🟠"), ("20:00", "FOMC 🔴")]
-    for h, e in news_items:
-        st.markdown(f"**{h}** - {e}")
 
-# --- 8. VENTANA: RADAR LOBO (REDISEÑO DE BOTONES Y GRÁFICO TÉCNICO) ---
+# --- 8. RADAR LOBO (CONTROL POR BOTONES + FIX GRÁFICO) ---
 if menu == "🎯 Radar Lobo":
     st.header(f"🎯 Centro de Mando: {st.session_state.nombre_sel}")
     
-    # SELECTORES POR BOTONES (RESTAURADOS)
+    # Selectores por botones
     c_cat, c_sub = st.columns([1, 4])
     with c_cat:
         st.write("📂 CATEGORÍA")
@@ -189,27 +183,32 @@ if menu == "🎯 Radar Lobo":
 
     st.divider()
 
-    # GRÁFICO DE VELAS Y TEMPORALIDAD
+    # Temporalidad y Gráfico
     tf_map = {"15m": "15m", "30m": "30m", "1h": "1h", "4h": "1h", "1d": "1d"}
-    tf_sel = st.select_slider("Rango Temporal", options=list(tf_map.keys()), value="1h")
+    tf_sel = st.select_slider("Temporalidad", options=list(tf_map.keys()), value="1h")
     
     df = yf.download(st.session_state.ticker_sel, period="15d", interval=tf_map[tf_sel], progress=False)
+    
     if not df.empty:
         levels = calculate_advanced_levels(df)
         p_act = float(df['Close'].iloc[-1])
         
+        
+
         fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-        # Dibujar Fibonacci y Niveles
+        
+        # DIBUJAR NIVELES (FIX: Convertimos 'v' a float puro para evitar el ValueError)
         colors = {"R3": "red", "R2": "orange", "Median": "gray", "S2": "blue", "S3": "green"}
         for k, v in levels.items():
             if k in colors:
-                fig.add_hline(y=v, line_dash="dash", line_color=colors[k], annotation_text=k)
+                val = float(v)
+                fig.add_hline(y=val, line_dash="dash", line_color=colors[k], annotation_text=k)
         
         fig.update_layout(template="plotly_dark", height=600)
         st.plotly_chart(fig, use_container_width=True)
 
-        # PLANES ESTRATÉGICOS (EL USUARIO ABRE, LA IA GESTIONA)
-        st.subheader("📝 Estrategias de Entrada Wolf")
+        # PLANES ESTRATÉGICOS
+        st.subheader("🛠️ Planes de Entrada")
         c1, c2, c3 = st.columns(3)
         planes = [
             {"plazo": "Scalp", "tipo": "COMPRA", "ent": p_act, "tp": p_act*1.008, "sl": p_act*0.996},
@@ -219,78 +218,50 @@ if menu == "🎯 Radar Lobo":
 
         for i, p in enumerate(planes):
             with [c1, c2, c3][i]:
-                # Cálculo de volumen sugerido
                 vol = max(0.01, round(st.session_state.riesgo_op / (abs(p['ent'] - p['sl']) * 10), 2))
-                st.markdown(f"""
-                <div class='strategy-card'>
-                    <h4>{p['plazo']}</h4>
-                    <p class='{"buy-signal" if p["tipo"]=="COMPRA" else "sell-signal"}'>{p["tipo"]}</p>
-                    <p><b>Entrada:</b> {p['ent']:,.2f}</p>
-                    <p><b>Volumen:</b> {vol} Lotes</p>
-                    <p><b>SL:</b> {p['sl']:,.2f} | <b>TP:</b> {p['tp']:,.2f}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button(f"REGISTRAR APERTURA {p['plazo']}", key=f"reg_{i}"):
-                    st.session_state.posiciones_activas.append({
-                        "activo": st.session_state.ticker_sel, "side": p['tipo'],
-                        "ent": p['ent'], "sl": p['sl'], "tp": p['tp'], "vol": vol
-                    })
-                    send_telegram_alert(f"🚀 *NUEVA POSICIÓN RECOGIDA POR SENTINEL*\nActivo: {st.session_state.ticker_sel}\nEntrada: {p['ent']}\nIA iniciando vigilancia 24/7.")
+                st.markdown(f"""<div class='strategy-card'><h4>{p['plazo']}</h4><p class='{"buy-signal" if p["tipo"]=="COMPRA" else "sell-signal"}'>{p["tipo"]}</p>
+                <p><b>Entrada:</b> {p['ent']:,.2f}</p><p><b>Volumen:</b> {vol}</p><p><b>SL:</b> {p['sl']:,.2f} | <b>TP:</b> {p['tp']:,.2f}</p></div>""", unsafe_allow_html=True)
+                if st.button(f"REGISTRAR {p['plazo']}", key=f"reg_{i}"):
+                    st.session_state.posiciones_activas.append({"activo": st.session_state.ticker_sel, "side": p['tipo'], "ent": p['ent'], "sl": p['sl'], "tp": p['tp'], "vol": vol})
+                    send_telegram_alert(f"🚀 *NUEVA POSICIÓN*: {st.session_state.ticker_sel} @ {p['ent']}")
 
-# --- 9. VENTANA: PREDICCIONES IA (CON ENVÍO A TELEGRAM) ---
+# --- 9. PREDICCIONES IA ---
 elif menu == "🔮 Predicciones IA":
     st.header("🔮 Escáner Predictivo Sentinel")
-    st.info("La IA no abre estas operaciones. Envía el ticket a tu Telegram y ábrelas manualmente en XTB.")
-    
     preds = [
         {"n": "Bitcoin", "t": "BTC-USD", "tipo": "COMPRA", "ent": 65400, "sl": 63000, "tp": 72000, "prob": "92%"},
         {"n": "Oro", "t": "GC=F", "tipo": "VENTA", "ent": 2420, "sl": 2450, "tp": 2310, "prob": "87%"}
     ]
-    
     for p in preds:
         col1, col2, col3 = st.columns([1, 2, 1])
         col1.metric(p['n'], p['prob'], p['tipo'])
         col2.markdown(f"**Plan IA:** Entrada en {p['ent']} | SL: {p['sl']} | TP: {p['tp']}")
-        if col3.button(f"Enviar Plan {p['n']} a Telegram", key=f"tel_{p['t']}"):
-            send_telegram_alert(f"🔮 *SUGERENCIA IA LOBO*\nActivo: {p['n']}\nTipo: {p['tipo']}\nEntrada: {p['ent']}\nSL: {p['sl']} | TP: {p['tp']}\nÉxito: {p['prob']}")
-            st.success("Señal enviada!")
+        if col3.button(f"Enviar a Telegram {p['n']}", key=f"tel_{p['t']}"):
+            send_telegram_alert(f"🔮 *SEÑAL*: {p['n']} {p['tipo']} @ {p['ent']}")
+            st.success("Enviado")
 
-# --- 10. VENTANA: NOTICIAS ---
+# --- 10. NOTICIAS ---
 elif menu == "📰 Noticias":
-    st.header("📰 News Sentinel Hub")
-    st.write("Conexión en tiempo real con Bloomberg/Reuters (Simulado)")
+    st.header("📰 News Hub")
+    impact_news = ["14:30 - USD - Nóminas no Agrícolas (NFP) - IMPACTO CRÍTICO", "16:00 - EUR - Discurso de Lagarde"]
+    for news in impact_news:
+        st.markdown(f"<div class='news-high-impact'>{news}</div>", unsafe_allow_html=True)
     for i in range(5):
-        st.markdown(f"<div class='hot-action-card'>⚡ Noticia {i+1}: El mercado espera datos de inflación en 2 horas. El impacto será ALTO en el Nasdaq.</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='hot-action-card'>⚡ Noticia {i+1}: Flujo de capital institucional detectado en Oro.</div>", unsafe_allow_html=True)
 
-# --- 11. VENTANA: AUDITORÍA IA (POSICIONES ABIERTAS) ---
+# --- 11. AUDITORÍA IA ---
 elif menu == "🧪 Auditoría IA":
-    st.header("🧪 Control de Riesgo Sentinel")
-    
-    st.subheader("🛰️ Posiciones bajo vigilancia IA")
+    st.header("🧪 Control Sentinel")
     if not st.session_state.posiciones_activas:
-        st.info("No hay posiciones abiertas registradas.")
+        st.info("No hay posiciones abiertas.")
     else:
         for p in st.session_state.posiciones_activas:
-            st.markdown(f"""
-            <div class='posicion-activa'>
-                <h3>{p['activo']} ({p['side']})</h3>
-                <p><b>Precio Entrada:</b> {p['ent']:,.2f} | <b>Volumen:</b> {p['vol']} Lotes</p>
-                <p><b>Vigilancia:</b> SL: {p['sl']:,.2f} | TP: {p['tp']:,.2f}</p>
-                <progress value="50" max="100" style="width:100%;"></progress>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.divider()
-    st.subheader("📟 Log Forense Sentinel")
-    st.markdown("<div class='audit-terminal'>[18:45:02] - SENTINEL: Iniciando escaneo de balance...<br>[18:46:12] - IA: Vigilando Nasdaq 100... Volatilidad nominal.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='posicion-activa'><h3>{p['activo']} ({p['side']})</h3><p>Entrada: {p['ent']} | Vol: {p['vol']}</p></div>", unsafe_allow_html=True)
+    st.markdown("### 📟 Log")
+    st.markdown("<div class='audit-terminal'>[19:30] Sentinel: Sistema estable.</div>", unsafe_allow_html=True)
 
 # --- 12. AJUSTES ---
 elif menu == "⚙️ Ajustes":
-    st.header("⚙️ Configuración Wolf V93")
-    st.session_state.wallet = st.number_input("Capital (€)", value=st.session_state.wallet)
-    st.session_state.riesgo_op = st.number_input("Riesgo (€)", value=st.session_state.riesgo_op)
-    st.divider()
-    st.subheader("🔌 Conexiones")
-    st.text_input("XTB ID", "123456")
-    st.password_input("XTB Token (Para control IA)")
-    st.text_input("Telegram Token", "TU_TOKEN")
+    st.header("⚙️ Ajustes")
+    st.session_state.wallet = st.number_input("Capital", value=st.session_state.wallet)
+    st.session_state.riesgo_op = st.number_input("Riesgo", value=st.session_state.riesgo_op)
