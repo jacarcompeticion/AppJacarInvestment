@@ -1,10 +1,4 @@
-Gemini ha dicho
-El error que estás experimentando es el clásico fallo de MultiIndex de Yahoo Finance (donde las columnas vienen con dos niveles) y un error de tipo al intentar formatear valores que a veces vienen como listas en lugar de números.
 
-He blindado la V82 Lobo Supremo corrigiendo estos errores, restaurando la Zona Caliente con un diseño más agresivo, ampliando significativamente la lista de activos y añadiendo las subcategorías en Material (Metales, Energía, Agrícolas).
-
-🐺 Jacar Pro V82 - Versión Blindada e Integral
-Python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
