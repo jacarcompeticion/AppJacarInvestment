@@ -5,3 +5,4 @@ pandas
 plotly
 pandas_ta
 streamlit-autorefresh
+websocket-client
