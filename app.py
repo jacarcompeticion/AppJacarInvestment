@@ -205,7 +205,101 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE FINAL: MONITOR
+# BLOQUE 7: MOTOR GRÁFICO TÁCTICO (V95)
 # =========================================================
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.subheader(f"📊 MONITOR: {st.session_state.ticker_name}")
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
+
+def get_trading_data():
+    # RANGOS INTRADÍA (Máximo 72h)
+    st.write("")
+    r_cols = st.columns(5)
+    intervals = {"1m": "1h", "5m": "6h", "15m": "24h", "30m": "48h", "1h": "72h"}
+    labels = ["1 MIN", "5 MIN", "15 MIN", "30 MIN", "1 HORA"]
+    
+    selected_int = "15m" # Default
+    for i, (k, v) in enumerate(intervals.items()):
+        # Botón de rango con estilo de la terminal
+        if r_cols[i].button(labels[i], key=f"range_{k}", use_container_width=True):
+            st.session_state.interval = k
+            st.session_state.period = v
+            
+    itv = st.session_state.get('interval', "15m")
+    prd = st.session_state.get('period', "24h")
+
+    # Descarga de datos casi en tiempo real
+    df = yf.download(st.session_state.ticker, period=prd, interval=itv, progress=False)
+    return df
+
+def render_advanced_chart():
+    df = get_trading_data()
+    if df.empty: return st.warning("Cargando flujo de datos...")
+
+    # --- CÁLCULOS TÉCNICOS ---
+    # 1. EMA y RSI (Superpuestos)
+    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    # Normalizar RSI para que quepa en el gráfico de precio (escala visual)
+    df['RSI_VISUAL'] = df['Low'] * 0.995 # Solo para posicionar etiquetas
+
+    # 2. Soportes y Resistencias Dinámicos
+    high_max = df['High'].max()
+    low_min = df['Low'].min()
+    avg_price = df['Close'].mean()
+
+    # 3. Métricas fuera del gráfico
+    st.markdown("---")
+    m1, m2, m3, m4 = st.columns(4)
+    trend = "ALCISTA 🟢" if df['Close'].iloc[-1] > df['EMA_20'].iloc[-1] else "BAJISTA 🔴"
+    
+    m1.metric("MÁXIMO RANGO", f"{high_max:,.2f}")
+    m2.metric("MÍNIMO RANGO", f"{low_min:,.2f}")
+    m3.metric("TENDENCIA", trend)
+    m4.metric("VOLATILIDAD", f"{((high_max-low_min)/low_min)*100:.2f}%")
+
+    # --- CONSTRUCCIÓN DEL GRÁFICO ---
+    # Subplots: 1 para Velas/EMA/Sop/Res y 1 para Volumen
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.03, subplot_titles=('', ''), 
+                        row_width=[0.2, 0.7])
+
+    # A. Gráfico de Velas
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        name="Market", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+    ), row=1, col=1)
+
+    # B. Superposición EMA
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
+
+    # C. Líneas de Soporte y Resistencia
+    fig.add_hline(y=high_max, line_dash="dash", line_color="#ff3131", annotation_text="RESISTENCIA", row=1, col=1)
+    fig.add_hline(y=low_min, line_dash="dash", line_color="#00ff41", annotation_text="SOPORTE", row=1, col=1)
+
+    # D. Volumen con color dinámico
+    colors = ['#00ff41' if row['Open'] < row['Close'] else '#ff3131' for i, row in df.iterrows()]
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volumen"), row=2, col=1)
+
+    # E. RSI Superpuesto (como texto o puntos pequeños para no ensuciar)
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20']*1.002, mode='lines', 
+                             line=dict(color='rgba(255,255,255,0.1)'), name="RSI Cloud",
+                             hovertext=df['RSI'].apply(lambda x: f"RSI: {x:.2f}")), row=1, col=1)
+
+    # Estilo Profesional
+    fig.update_layout(
+        template="plotly_dark", height=700,
+        plot_bgcolor="#05070a", paper_bgcolor="#05070a",
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=20, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+render_advanced_chart()
