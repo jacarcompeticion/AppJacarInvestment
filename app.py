@@ -2,61 +2,49 @@ import streamlit as st
 import yfinance as yf
 
 # =========================================================
-# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (ESTILOS FORZADOS)
+# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (CSS DE ALTA PRIORIDAD)
 # =========================================================
 st.set_page_config(page_title="Wolf Sovereign V95", layout="wide", page_icon="🐺")
 
-# CSS para forzar colores y eliminar espacios
 st.markdown("""
     <style>
-    /* Fondo y Reset de espacios */
     .stApp { background-color: #05070a; }
+    
+    /* ELIMINAR ESPACIOS Y GAP ENTRE FILAS */
     [data-testid="stVerticalBlock"] { gap: 0rem !important; }
-    div[data-testid="stColumn"] { padding: 0px !important; margin: 0px !important; }
+    div[data-testid="stColumn"] { padding: 0px !important; }
 
-    /* --- 1. VENTANAS (NAV SUPERIOR): MARRÓN CLARO (#D2B48C) --- */
-    /* Botón Normal */
+    /* --- 1. VENTANAS (NAV SUPERIOR): MARRÓN -> BLANCO --- */
     div.nav-btn button {
-        background-color: #D2B48C !important;
-        color: #000000 !important;
-        border: 1px solid #8B4513 !important;
-        border-radius: 0px !important;
-        height: 3.5em !important;
-        font-weight: bold !important;
+        background-color: #A67B5B !important; color: #000000 !important;
+        border: 1px solid #000 !important; border-radius: 0px !important;
+        height: 3.5em !important; font-weight: bold !important;
     }
-    /* Botón Activo (Blanco) */
     div.nav-active button {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-        border: 2px solid #000000 !important;
-        border-radius: 0px !important;
-        height: 3.5em !important;
-        font-weight: 900 !important;
+        background-color: #FFFFFF !important; color: #000000 !important;
+        border: 2px solid #000000 !important; border-radius: 0px !important;
+        height: 3.5em !important; font-weight: 900 !important;
     }
 
     /* --- 2. MENÚ LOBO (CATEGORÍAS/SUB/ACTIVOS): BLANCO -> NEGRO --- */
-    /* Botón Normal (Blanco) */
     div.menu-btn button {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-        border: 1px solid #333333 !important;
-        border-radius: 0px !important;
+        background-color: #FFFFFF !important; color: #000000 !important;
+        border: 1px solid #333333 !important; border-radius: 0px !important;
         height: 3.2em !important;
     }
-    /* Botón Activo (Negro) */
     div.menu-active button {
-        background-color: #000000 !important;
-        color: #FFFFFF !important;
-        border: 1px solid #FFFFFF !important;
-        border-radius: 0px !important;
-        height: 3.2em !important;
-        font-weight: bold !important;
+        background-color: #000000 !important; color: #FFFFFF !important;
+        border: 1px solid #FFFFFF !important; border-radius: 0px !important;
+        height: 3.2em !important; font-weight: bold !important;
     }
+
+    /* ESPACIADO PARA SENTINEL (Evitar solapamiento) */
+    .sentinel-space { margin-top: 40px !important; margin-bottom: 20px !important; }
 
     /* Ticker Animado */
     .ticker-wrap {
         width: 100%; overflow: hidden; background: #000; 
-        border-bottom: 2px solid #D2B48C; padding: 10px 0;
+        border-bottom: 2px solid #A67B5B; padding: 10px 0;
     }
     .ticker-move {
         display: flex; width: fit-content;
@@ -86,15 +74,22 @@ DATABASE = {
     },
     "acciones": {
         "TECNOLOGÍA": {"NVDA.US": ["NVDA", "🟢"], "TSLA.US": ["TSLA", "🔴"]},
-        "material": {"METALES": {"GOLD": ["GC=F", "🟡"]}, "ENERGÍA": {"OIL": ["CL=F", "🛢️"]}},
-        "divisas": {"MAJORS": {"EURUSD": ["EURUSD=X", "🇪🇺"]}, "CRYPTO": {"BITCOIN": ["BTC-USD", "₿"]}}
+        "BANCA": {"SAN.MC": ["SAN.MC", "🔴"], "BBVA.MC": ["BBVA.MC", "🔵"]}
+    },
+    "material": {
+        "METALES": {"GOLD": ["GC=F", "🟡"], "SILVER": ["SI=F", "⚪"]},
+        "ENERGÍA": {"OIL": ["CL=F", "🛢️"]}
+    },
+    "divisas": {
+        "MAJORS": {"EURUSD": ["EURUSD=X", "🇪🇺"]},
+        "CRYPTO": {"BITCOIN": ["BTC-USD", "₿"]}
     }
 }
 
 # =========================================================
-# BLOQUE 3: HEADER (KPIs Y TICKER CON MODAL)
+# BLOQUE 3: HEADER (KPIs Y TICKER)
 # =========================================================
-st.markdown(f'<div style="background-color:#0d1117; padding:8px; display:flex; justify-content:space-around; border-bottom:1px solid #333; color:#D2B48C; font-weight:bold;">'
+st.markdown(f'<div style="background-color:#0d1117; padding:8px; display:flex; justify-content:space-around; border-bottom:1px solid #333; color:#A67B5B; font-weight:bold;">'
             f'<span>CAPITAL: {st.session_state.wallet:,.2f}€</span>'
             f'<span>MARGEN: {st.session_state.margen:,.2f}€</span>'
             f'<span>PnL: {st.session_state.pnl:,.2f}€</span></div>', unsafe_allow_html=True)
@@ -103,13 +98,15 @@ hot_list = [("NQ=F", "US100", "🇺🇸", "COMPRAR"), ("GC=F", "GOLD", "🟡", "
 content = "".join([f'<div class="ticker-item">{i} {n} <span style="color:{"#00ff41" if s=="COMPRAR" else "#ff3131"};">[{s}]</span></div>' for t, n, i, s in hot_list * 10])
 st.markdown(f'<div class="ticker-wrap"><div class="ticker-move">{content}</div></div>', unsafe_allow_html=True)
 
-with st.expander("🐺 ACCIÓN SENTINEL"):
+# ESPACIADO Y ACCIÓN SENTINEL
+st.markdown('<div class="sentinel-space"></div>', unsafe_allow_html=True)
+with st.expander("🐺 ACCIÓN RECOMENDADA SENTINEL"):
     for t, n, i, s in hot_list:
-        if st.button(f"VER ACCIÓN {n}", key=f"alert_{n}"):
-            st.warning(f"ORDEN: {s} en {n}")
+        if st.button(f"VER SEÑAL {n}", key=f"alert_{n}"):
+            st.info(f"ORDEN: {s} en {n}. TP: +2% | SL: -1%")
 
 # =========================================================
-# BLOQUE 4: NAVEGACIÓN (VENTANAS) - MARRÓN -> BLANCO
+# BLOQUE 4: NAVEGACIÓN (VENTANAS) - MARRÓN <-> BLANCO
 # =========================================================
 nav_cols = st.columns(6)
 btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
@@ -125,7 +122,7 @@ for i, col in enumerate(nav_cols):
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 5: VENTANA LOBO (CASCADA PEGADA - BLANCO -> NEGRO)
+# BLOQUE 5: VENTANA LOBO (CASCADA FIJADA - BLANCO <-> NEGRO)
 # =========================================================
 if st.session_state.view == "Lobo":
     # 5.1 - CATEGORÍAS
@@ -141,7 +138,7 @@ if st.session_state.view == "Lobo":
                 st.session_state.active_sub = None
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 5.2 - SUBCATEGORÍAS (Solo si hay categoría)
+    # 5.2 - SUBCATEGORÍAS
     if st.session_state.active_cat:
         sub_dict = DATABASE.get(st.session_state.active_cat, {})
         sub_list = list(sub_dict.keys())
@@ -155,7 +152,7 @@ if st.session_state.view == "Lobo":
                     st.session_state.active_sub = sub
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # 5.3 - ACTIVOS (Solo si hay subcategoría)
+        # 5.3 - ACTIVOS
         if st.session_state.active_sub:
             items = sub_dict[st.session_state.active_sub]
             cols_act = st.columns(6)
@@ -172,5 +169,5 @@ if st.session_state.view == "Lobo":
 # =========================================================
 # BLOQUE 7: MONITOR
 # =========================================================
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br><br>", unsafe_allow_html=True)
 st.subheader(f"📊 MONITOR: {st.session_state.ticker_name}")
