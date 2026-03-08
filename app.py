@@ -1,36 +1,57 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime
 
 # =========================================================
-# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (ESTILOS)
+# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (CSS AVANZADO)
 # =========================================================
 st.set_page_config(page_title="Wolf Sovereign V95", layout="wide", page_icon="🐺")
 
 st.markdown("""
     <style>
     .stApp { background-color: #05070a; color: #e1e1e1; }
-    /* Estilo KPIs Superiores */
+    
+    /* BLOQUE 3.1: KPIs Superiores */
     .kpi-row {
-        background-color: #0d1117; padding: 12px; border-bottom: 2px solid #d4af37;
-        display: flex; justify-content: space-around; font-family: monospace; font-size: 1rem;
+        background-color: #0d1117; padding: 10px; border-bottom: 1px solid #333;
+        display: flex; justify-content: space-around; font-family: monospace; font-size: 0.9rem;
     }
     .kpi-val { color: #d4af37; font-weight: bold; }
-    /* Estilo Botones Navegación */
-    div.stButton > button {
-        background-color: #161b22; color: #d4af37; border: 1px solid #333;
-        border-radius: 6px; height: 3em; font-weight: bold;
+
+    /* BLOQUE 3.2: Ticker Animado (Bolsa Antigua) */
+    .ticker-wrap {
+        width: 100%; overflow: hidden; background: #000; 
+        border-bottom: 1px solid #d4af37; padding: 5px 0;
     }
-    div.stButton > button:hover { border-color: #d4af37; background: #1c2128; }
-    /* Ticker Hot Assets */
-    .hot-label { font-size: 0.8rem; margin-bottom: 5px; color: #888; }
+    .ticker-move {
+        display: flex; width: fit-content;
+        animation: ticker 40s linear infinite;
+    }
+    .ticker-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 0 30px; white-space: nowrap; font-family: monospace; font-size: 1rem;
+    }
+    @keyframes ticker {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+    }
+
+    /* BLOQUE 5: Estilo Menú (Categorías y Subcategorías) */
+    /* Botón estándar de menú */
+    div.stButton > button {
+        background-color: #1a1e23; color: #ffffff; border: 1px solid #444;
+        border-radius: 4px; transition: 0.3s;
+    }
+    /* Botón Activo (Cuando estás dentro de la categoría/subcategoría) */
+    .active-btn > div > button {
+        background-color: #d4af37 !important; color: #000 !important;
+        border: 1px solid #fff !important; font-weight: 800 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 2: ESTADOS Y PERSISTENCIA (DATOS)
+# BLOQUE 2: ESTADOS Y BASE DE DATOS
 # =========================================================
 if 'setup' not in st.session_state:
     st.session_state.update({
@@ -40,7 +61,6 @@ if 'setup' not in st.session_state:
         'setup': True
     })
 
-# Base de Datos (Mapeo XTB -> Yahoo)
 DATABASE = {
     "indices": {
         "EEUU": {"US100": ["NQ=F", "🇺🇸"], "US500": ["ES=F", "🇺🇸"]},
@@ -61,50 +81,57 @@ DATABASE = {
 }
 
 # =========================================================
-# BLOQUE 3: HEADER FIJO (CAPITAL Y TICKER CALIENTE)
+# BLOQUE 3: HEADER FIJO (CAPITAL Y TICKER ANIMADO)
 # =========================================================
-# 3.1 - Línea de Capital
+# 3.1 - KPIs
 pnl_color = "#00ff41" if st.session_state.pnl >= 0 else "#ff3131"
 st.markdown(f"""
     <div class="kpi-row">
-        <span>Capital: <span class="kpi-val">{st.session_state.wallet:,.2f}€</span></span>
-        <span>| Margen: <span class="kpi-val">{st.session_state.margen:,.2f}€</span></span>
-        <span>| Objetivo: <span class="kpi-val">{st.session_state.objetivo:,.2f}€</span></span>
-        <span>| PnL Abierto: <span style="color:{pnl_color}; font-weight:bold;">{st.session_state.pnl:,.2f}€</span></span>
+        <span>CAPITAL: <span class="kpi-val">{st.session_state.wallet:,.2f}€</span></span>
+        <span>MARGEN: <span class="kpi-val">{st.session_state.margen:,.2f}€</span></span>
+        <span>OBJETIVO: <span class="kpi-val">{st.session_state.objetivo:,.2f}€</span></span>
+        <span>PnL: <span style="color:{pnl_color}; font-weight:bold;">{st.session_state.pnl:,.2f}€</span></span>
     </div>
     """, unsafe_allow_html=True)
 
-# 3.2 - Ticker de Activos Calientes (Clicables)
-st.markdown("<div class='hot-label'>🔥 ACTIVOS CALIENTES (SENTINEL SIGNALS)</div>", unsafe_allow_html=True)
-hot_list = [
-    {"n": "US100", "i": "🇺🇸", "s": "BUY", "t": "NQ=F", "c": "#00ff41"},
-    {"n": "GOLD", "i": "🟡", "s": "BUY", "t": "GC=F", "c": "#00ff41"},
-    {"n": "BITCOIN", "i": "₿", "s": "SELL", "t": "BTC-USD", "c": "#ff3131"},
-    {"n": "NVDA.US", "i": "🟢", "s": "BUY", "t": "NVDA", "c": "#00ff41"},
-    {"n": "OIL.BRENT", "i": "🌍", "s": "BUY", "t": "BZ=F", "c": "#00ff41"}
+# 3.2 - Ticker Animado (Activos Calientes)
+hot_items = [
+    ("NQ=F", "US100", "🇺🇸", "BUY", "#00ff41"), ("GC=F", "GOLD", "🟡", "BUY", "#00ff41"),
+    ("BTC-USD", "BITCOIN", "₿", "SELL", "#ff3131"), ("NVDA", "NVDA.US", "🟢", "BUY", "#00ff41"),
+    ("BZ=F", "OIL.BRENT", "🌍", "BUY", "#00ff41")
 ]
-h_cols = st.columns(len(hot_list))
-for idx, h in enumerate(hot_list):
-    st.markdown(f"<style>div[data-testid='stColumn']:nth-of-type({idx+1}) button {{ border-left: 5px solid {h['c']} !important; }}</style>", unsafe_allow_html=True)
-    if h_cols[idx].button(f"{h['i']} {h['n']}\n{h['s']}", key=f"h_{h['n']}", use_container_width=True):
-        st.session_state.ticker = h['t']
-        st.session_state.ticker_name = h['n']
-        st.toast(f"Cargando señal de {h['s']} para {h['n']}")
+# Duplicamos la lista para efecto infinito suave
+content = ""
+for t, n, i, s, c in hot_items * 3:
+    content += f'<div class="ticker-item">{i} {n} <span style="color:{c};">[{s}]</span></div>'
+
+st.markdown(f'<div class="ticker-wrap"><div class="ticker-move">{content}</div></div>', unsafe_allow_html=True)
+
+# Acciones del Ticker (Botones discretos debajo para interactuar)
+t_cols = st.columns(len(hot_items))
+for idx, (t, n, i, s, c) in enumerate(hot_items):
+    if t_cols[idx].button(f"Analyze {n}", key=f"h_{n}", use_container_width=True):
+        st.session_state.ticker = t
+        st.session_state.ticker_name = n
 
 # =========================================================
 # BLOQUE 4: NAVEGACIÓN PRINCIPAL
 # =========================================================
-st.divider()
 nav = st.columns(6)
-btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDIC.", "📰 NOTICIAS", "⚙️ AJUSTES"]
+btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
 v_list = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
 for i, col in enumerate(nav):
-    if col.button(btns[i], use_container_width=True):
-        st.session_state.view = v_list[i]
-st.divider()
+    # Marcamos el botón activo con clase CSS especial
+    if st.session_state.view == v_list[i]:
+        st.markdown('<div class="active-btn">', unsafe_allow_html=True)
+        if col.button(btns[i], key=f"nav_{i}", use_container_width=True): pass
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        if col.button(btns[i], key=f"nav_{i}", use_container_width=True):
+            st.session_state.view = v_list[i]
 
 # =========================================================
-# BLOQUE 5: VENTANA LOBO (CATEGORÍAS Y ACTIVOS)
+# BLOQUE 5: VENTANA LOBO (MENÚ LIMPIO)
 # =========================================================
 if st.session_state.view == "Lobo":
     # 5.1 - Categorías
@@ -112,39 +139,44 @@ if st.session_state.view == "Lobo":
     cats = ["indices", "acciones", "material", "divisas"]
     icons = ["🏛️", "📈", "🏗️", "💱"]
     for i, cat in enumerate(cats):
-        if c_cat[i].button(f"{icons[i]} {cat.upper()}", use_container_width=True):
-            st.session_state.active_cat = cat
-            st.session_state.active_sub = None
+        if st.session_state.active_cat == cat:
+            st.markdown('<div class="active-btn">', unsafe_allow_html=True)
+            c_cat[i].button(f"{icons[i]} {cat.upper()}", key=f"cat_{cat}", use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            if c_cat[i].button(f"{icons[i]} {cat.upper()}", key=f"cat_{cat}", use_container_width=True):
+                st.session_state.active_cat = cat
+                st.session_state.active_sub = None
 
-    # 5.2 - Subcategorías
-    st.markdown(f"#### 📂 {st.session_state.active_cat.upper()}")
+    # 5.2 - Subcategorías (Sin nombres de carpetas, solo botones con color de estado)
     sub_list = list(DATABASE[st.session_state.active_cat].keys())
     c_sub = st.columns(max(len(sub_list), 4))
     for i, sub in enumerate(sub_list):
-        if c_sub[i].button(sub, key=f"s_{sub}", use_container_width=True):
-            st.session_state.active_sub = sub
+        if st.session_state.active_sub == sub:
+            st.markdown('<div class="active-btn">', unsafe_allow_html=True)
+            c_sub[i].button(sub, key=f"s_{sub}", use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            if c_sub[i].button(sub, key=f"s_{sub}", use_container_width=True):
+                st.session_state.active_sub = sub
 
-    # 5.3 - Activos Finales
+    # 5.3 - Activos Finales (Botones pequeños y limpios)
     if st.session_state.active_sub:
-        st.divider()
         items = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
-        cols_act = st.columns(5)
+        cols_act = st.columns(6)
         for idx, (name, data) in enumerate(items.items()):
-            if cols_act[idx % 5].button(f"{data[1]} {name}", key=f"f_{name}", use_container_width=True):
-                st.session_state.ticker = data[0]
-                st.session_state.ticker_name = name
+            # Si es el activo seleccionado, resaltar en dorado
+            if st.session_state.ticker_name == name:
+                st.markdown('<div class="active-btn">', unsafe_allow_html=True)
+                cols_act[idx % 6].button(f"{data[1]} {name}", key=f"f_{name}", use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                if cols_act[idx % 6].button(f"{data[1]} {name}", key=f"f_{name}", use_container_width=True):
+                    st.session_state.ticker = data[0]
+                    st.session_state.ticker_name = name
 
 # =========================================================
-# BLOQUE 6: VENTANA AJUSTES
-# =========================================================
-elif st.session_state.view == "Ajustes":
-    st.header("⚙️ Configuración")
-    st.session_state.wallet = st.number_input("Capital Inicial (€)", value=st.session_state.wallet)
-    st.session_state.objetivo = st.number_input("Meta Mensual (€)", value=st.session_state.objetivo)
-
-# =========================================================
-# BLOQUE 7: EL GRÁFICO (PRÓXIMO PASO)
+# BLOQUE 7: EL GRÁFICO (LISTO PARA INYECTAR)
 # =========================================================
 st.markdown("---")
-st.subheader(f"📊 Análisis: {st.session_state.ticker_name} ({st.session_state.ticker})")
-st.info("Bloques configurados. ¿Inyectamos el motor de velas en el Bloque 7?")
+st.subheader(f"📊 {st.session_state.ticker_name} | {st.session_state.ticker}")
