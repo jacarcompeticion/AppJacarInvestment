@@ -7,63 +7,78 @@ st.set_page_config(page_title="Wolf Sovereign V94", layout="wide", page_icon="�
 if 'view' not in st.session_state: st.session_state.view = "Lobo"
 if 'active_cat' not in st.session_state: st.session_state.active_cat = "indices"
 if 'active_sub' not in st.session_state: st.session_state.active_sub = None
-if 'ticker' not in st.session_state: st.session_state.ticker = "US100"
+if 'ticker' not in st.session_state: st.session_state.ticker = "NQ=F"
 
-# 3. ESTILO DE BOTONES
+# 3. ESTILO AVANZADO (Botones compactos y logos integrados)
 st.markdown("""
     <style>
     .stApp { background-color: #05070a; color: #e1e1e1; }
+    
+    /* Botones de Navegación Superior */
     div.stButton > button {
         background-color: #161b22; color: #d4af37;           
         border: 1px solid #333; border-radius: 8px;
-        height: 3.5em; font-weight: bold;
+        height: 3em; font-weight: bold; font-size: 0.9rem;
     }
     div.stButton > button:hover { border-color: #d4af37; background-color: #1c2128; }
-    .asset-card { display: flex; align-items: center; gap: 10px; }
+
+    /* Estilo para los botones de activos (más pequeños) */
+    .asset-btn-container {
+        display: flex;
+        align-items: center;
+        background-color: #161b22;
+        border: 1px solid #333;
+        border-radius: 5px;
+        padding: 5px 10px;
+        margin-bottom: 5px;
+        cursor: pointer;
+    }
+    .asset-btn-container:hover { border-color: #d4af37; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- BASE DE DATOS ESTRUCTURADA (Mapeo XTB -> Yahoo) ---
-# Formato: "Nombre XTB": ["Ticker Yahoo", "URL Logo"]
+# Hemos actualizado las imágenes a iconos de alta disponibilidad
 DATABASE = {
     "indices": {
         "EEUU": {
-            "US100": ["NQ=F", "https://cryptologos.cc/logos/usd-coin-usdc-logo.png"],
-            "US500": ["ES=F", "https://cryptologos.cc/logos/usd-coin-usdc-logo.png"]
+            "US100": ["NQ=F", "🇺🇸"],
+            "US500": ["ES=F", "🇺🇸"]
         },
         "EUROPA": {
-            "DE40": ["^GDAXI", "https://flagcdn.com/w40/de.png"],
-            "SPA35": ["^IBEX", "https://flagcdn.com/w40/es.png"]
+            "DE40": ["^GDAXI", "🇩🇪"],
+            "SPA35": ["^IBEX", "🇪🇸"]
         }
     },
     "acciones": {
         "TECNOLOGÍA": {
-            "NVDA.US": ["NVDA", "https://logo.clearbit.com/nvidia.com"],
-            "TSLA.US": ["TSLA", "https://logo.clearbit.com/tesla.com"],
-            "AAPL.US": ["AAPL", "https://logo.clearbit.com/apple.com"]
+            "NVDA.US": ["NVDA", "🟢"],
+            "TSLA.US": ["TSLA", "🔴"],
+            "AAPL.US": ["AAPL", "⚪"]
         },
         "BANCA ESPAÑA": {
-            "SAN.MC": ["SAN.MC", "https://logo.clearbit.com/santander.com"],
-            "BBVA.MC": ["BBVA.MC", "https://logo.clearbit.com/bbva.com"]
+            "SAN.MC": ["SAN.MC", "🔴"],
+            "BBVA.MC": ["BBVA.MC", "🔵"]
         }
     },
     "material": {
         "METALES": {
-            "GOLD": ["GC=F", "https://cdn-icons-png.flaticon.com/512/272/272530.png"],
-            "SILVER": ["SI=F", "https://cdn-icons-png.flaticon.com/512/4343/4343033.png"]
+            "GOLD": ["GC=F", "🟡"],
+            "SILVER": ["SI=F", "⚪"]
         },
         "ENERGÍA": {
-            "OIL.WTI": ["CL=F", "https://cdn-icons-png.flaticon.com/512/2967/2967562.png"],
-            "NATGAS": ["NG=F", "https://cdn-icons-png.flaticon.com/512/1500/1500465.png"]
+            "OIL.WTI": ["CL=F", "🛢️"],
+            "OIL.BRENT": ["BZ=F", "🌍"],
+            "NATGAS": ["NG=F", "🔥"]
         }
     },
     "divisas": {
         "MAJORS": {
-            "EURUSD": ["EURUSD=X", "https://flagcdn.com/w40/eu.png"],
-            "GBPUSD": ["GBPUSD=X", "https://flagcdn.com/w40/gb.png"]
+            "EURUSD": ["EURUSD=X", "🇪🇺"],
+            "GBPUSD": ["GBPUSD=X", "🇬🇧"]
         },
         "CRYPTO": {
-            "BITCOIN": ["BTC-USD", "https://cryptologos.cc/logos/bitcoin-btc-logo.png"]
+            "BITCOIN": ["BTC-USD", "₿"]
         }
     }
 }
@@ -78,7 +93,7 @@ views = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
 for i, col in enumerate(nav_cols):
     if col.button(titles[i], use_container_width=True):
         st.session_state.view = views[i]
-        st.session_state.active_sub = None # Reset subcat al cambiar de vista
+        st.session_state.active_sub = None
 
 st.divider()
 
@@ -92,37 +107,37 @@ if st.session_state.view == "Lobo":
     for i, cat in enumerate(cats):
         if c_cat[i].button(f"{icons[i]} {cat.upper()}", use_container_width=True):
             st.session_state.active_cat = cat
-            st.session_state.active_sub = None # Reset subcat al elegir nueva categoría
+            st.session_state.active_sub = None
 
-    # B. Subcategorías (Solo aparecen si hay una categoría elegida)
-    st.markdown(f"#### 📂 Subcategorías en {st.session_state.active_cat.upper()}")
+    # B. Subcategorías
+    st.markdown(f"#### 📂 {st.session_state.active_cat.upper()}")
     subcats = list(DATABASE[st.session_state.active_cat].keys())
-    c_sub = st.columns(len(subcats))
+    c_sub = st.columns(max(len(subcats), 4))
     
     for i, sub in enumerate(subcats):
         if c_sub[i].button(sub, key=f"sub_{sub}", use_container_width=True):
             st.session_state.active_sub = sub
 
-    # C. Activos Finales (Con Logo y Nombre XTB)
+    # C. Activos Finales (Logo e Imagen dentro del texto del botón)
     if st.session_state.active_sub:
         st.divider()
-        st.markdown(f"#### 💎 Activos en {st.session_state.active_sub}")
+        st.markdown(f"#### 💎 Selecciona Activo ({st.session_state.active_sub})")
         activos_dict = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
         
-        # Mostramos los activos como botones con imagen al lado
-        for nombre_xtb, datos in activos_dict.items():
-            col_img, col_btn = st.columns([0.1, 0.9])
-            col_img.image(datos[1], width=35)
-            if col_btn.button(nombre_xtb, key=f"final_{nombre_xtb}", use_container_width=True):
-                st.session_state.ticker = datos[0] # Aquí guardamos el ticker de Yahoo para el gráfico
-                st.success(f"Seleccionado: {nombre_xtb} (Yahoo: {datos[0]})")
+        # Mostramos los activos en columnas más pequeñas (5 por fila)
+        cols_act = st.columns(5)
+        for idx, (nombre_xtb, datos) in enumerate(activos_dict.items()):
+            # El logo ahora va dentro del string del botón para asegurar que carga
+            label = f"{datos[1]} {nombre_xtb}"
+            if cols_act[idx % 5].button(label, key=f"f_{nombre_xtb}", use_container_width=True):
+                st.session_state.ticker = datos[0]
+                st.toast(f"Cargando {nombre_xtb}...")
 
     st.markdown("---")
-    st.info(f"Sistema listo para graficar **{st.session_state.ticker}**")
+    st.subheader(f"📊 Monitor: {st.session_state.ticker}")
+    st.info("Estructura de activos compacta y Brent añadido correctamente.")
 
-# Otras ventanas vacías por ahora...
-elif st.session_state.view == "XTB": st.header("💼 GESTIÓN XTB")
-elif st.session_state.view == "Ratios": st.header("📈 RATIOS IA")
-elif st.session_state.view == "Predicciones": st.header("🔮 PREDICCIONES")
-elif st.session_state.view == "Noticias": st.header("📰 NOTICIAS")
-elif st.session_state.view == "Ajustes": st.header("⚙️ AJUSTES")
+# Otras ventanas...
+elif st.session_state.view == "Ajustes":
+    st.header("⚙️ CONFIGURACIÓN")
+    st.session_state.wallet = st.number_input("Wallet Inicial (€)", value=18850.0)
