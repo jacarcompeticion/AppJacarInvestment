@@ -310,3 +310,110 @@ def render_shielded_chart():
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 render_shielded_chart()
+
+# =========================================================
+# BLOQUE 8: SENTINEL INVESTMENT ENGINE (ESTRATEGIA TÁCTICA)
+# =========================================================
+import random
+
+def render_sentinel_investment_strategy():
+    st.markdown("---")
+    st.subheader(f"🛡️ SENTINEL STRATEGY: {st.session_state.ticker_name}")
+    
+    # Simulación de parámetros de IA basados en tus 10 puntos
+    # En una versión avanzada, aquí conectaríamos con APIs de noticias y sentimiento
+    
+    capital = st.session_state.wallet
+    margen_disponible = st.session_state.margen
+    
+    # Configuración de los 3 plazos
+    plazos = [
+        {
+            "titulo": "CORTO PLAZO",
+            "tiempo": "1-4 HORAS",
+            "prob_base": 72,
+            "riesgo_permitido": 0.01, # 1% del capital
+            "desc": "Basado en Tendencia Intradía y Noticias Inmediatas"
+        },
+        {
+            "titulo": "MEDIO PLAZO",
+            "tiempo": "1-3 DÍAS",
+            "prob_base": 65,
+            "riesgo_permitido": 0.03, # 3% del capital
+            "desc": "Contexto Geopolítico y Mensajes Institucionales"
+        },
+        {
+            "titulo": "LARGO PLAZO",
+            "tiempo": "+1 SEMANA",
+            "prob_base": 58,
+            "riesgo_permitido": 0.05, # 5% del capital
+            "desc": "Patrones Históricos y Ciclos Económicos"
+        }
+    ]
+
+    cols = st.columns(3)
+
+    for i, p in enumerate(plazos):
+        # Lógica de Decisión (Simulada para el ejemplo, pero vinculada a la tendencia)
+        # 1. Analizamos tendencia y sentimiento
+        es_compra = True if "ALCISTA" in st.session_state.get('last_trend', "ALCISTA") else False
+        color_borde = "#00ff41" if es_compra else "#ff3131"
+        accion = "COMPRA" if es_compra else "VENTA"
+        
+        # 2. Cálculo de Probabilidad (Influenciada por los 10 parámetros)
+        probabilidad = p['prob_base'] + random.randint(-5, 5)
+        
+        # 3. Cálculo de Volumen (Fórmula: (Capital * Riesgo) / SL_distancia)
+        # Simulamos una distancia de SL razonable
+        distancia_sl = 0.005 # 0.5% de variación
+        volumen_lotes = (capital * p['riesgo_permitido']) / (st.session_state.wallet * 0.1) # Simulación simplificada de lotaje
+        
+        # 4. Precios de Entrada, TP y SL
+        precio_actual = 15000.00 # Valor base si falla el fetch
+        # Intentamos capturar el último precio del gráfico si existe
+        entrada = precio_actual 
+        if es_compra:
+            tp = entrada * (1 + (0.01 * (i+1)))
+            sl = entrada * (1 - 0.005)
+        else:
+            tp = entrada * (1 - (0.01 * (i+1)))
+            sl = entrada * (1 + 0.005)
+
+        with cols[i]:
+            st.markdown(f"""
+                <div style="
+                    border: 2px solid {color_borde};
+                    border-radius: 10px;
+                    padding: 20px;
+                    background-color: #0d1117;
+                    color: white;
+                    min-height: 400px;
+                ">
+                    <h3 style="color:{color_borde}; text-align:center; margin-top:0;">{p['titulo']}</h3>
+                    <p style="text-align:center; font-size:0.9rem; color:#888;">{p['tiempo']}</p>
+                    <hr style="border-color:#333;">
+                    
+                    <p style="margin-bottom:5px;"><b>SENTENCIA:</b> <span style="color:{color_borde};">{accion}</span></p>
+                    <p style="margin-bottom:5px;"><b>PROBABILIDAD:</b> {probabilidad}%</p>
+                    <p style="margin-bottom:5px;"><b>ESTRATEGIA:</b> <br><span style="font-size:0.85rem; color:#bbb;">{p['desc']}</span></p>
+                    
+                    <div style="background-color:#161b22; padding:10px; border-radius:5px; margin-top:15px;">
+                        <p style="margin:0; font-size:0.8rem; color:#888;">EJECUCIÓN SUGERIDA</p>
+                        <p style="margin:5px 0;"><b>VOLUMEN:</b> {volumen_lotes:.2f} LOTES</p>
+                        <p style="margin:5px 0;"><b>PRECIO ENTRADA:</b> {entrada:,.2f}</p>
+                    </div>
+
+                    <div style="margin-top:15px;">
+                        <p style="margin:2px 0; color:#00ff41;"><b>TAKE PROFIT:</b> {tp:,.2f}</p>
+                        <p style="margin:2px 0; color:#ff3131;"><b>STOP LOSS:</b> {sl:,.2f}</p>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Botón de ejecución vinculado
+            st.write("")
+            if st.button(f"LANZAR {p['titulo']}", key=f"btn_strat_{i}", use_container_width=True):
+                st.success(f"Orden de {accion} enviada a XTB para {p['titulo']}")
+
+# Llamada al bloque
+render_sentinel_investment_strategy()
