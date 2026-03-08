@@ -205,52 +205,60 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO ULTRA-RÁPIDO (V95 OPTIMIZADO)
+# BLOQUE 7: MOTOR GRÁFICO BLINDADO (V95)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
 
-# Función con caché para acelerar la descarga de datos
-@st.cache_data(ttl=60)  # Los datos se refrescan cada 60 segundos
-def fetch_fast_data(symbol, period, interval):
-    df = yf.download(symbol, period=period, interval=interval, progress=False)
-    return df
+@st.cache_data(ttl=60)
+def fetch_safe_data(symbol, period, interval):
+    try:
+        # Descarga forzada con auto_adjust para evitar errores de dividendos/splits
+        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        return df
+    except:
+        return pd.DataFrame()
 
-def render_optimized_chart():
-    # 1. DESPLEGABLE DE RANGO (Sustituye a los botones)
-    c_sel, _ = st.columns([1, 4])
+def render_shielded_chart():
+    # 1. DESPLEGABLE DE RANGO
+    c_sel, c_met = st.columns([1, 4])
     with c_sel:
         opciones = {
-            "1m (Última hora)": ["1h", "1m"],
-            "5m (Últimas 6h)": ["6h", "5m"],
-            "15m (Últimas 24h)": ["24h", "15m"],
-            "1h (Últimas 72h)": ["72h", "1h"]
+            "1m (1 hora)": ["1h", "1m"],
+            "5m (6 horas)": ["6h", "5m"],
+            "15m (24 horas)": ["1d", "15m"],
+            "1h (72 horas)": ["3d", "1h"]
         }
-        seleccion = st.selectbox("⏳ RANGO TEMPORAL", list(opciones.keys()), index=2)
+        seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2)
         periodo, intervalo = opciones[seleccion]
 
-    # 2. CARGA DE DATOS
-    df = fetch_fast_data(st.session_state.ticker, periodo, intervalo)
+    # 2. OBTENCIÓN DE DATOS
+    ticker_actual = st.session_state.ticker
+    df = fetch_safe_data(ticker_actual, periodo, intervalo)
     
-    if df.empty:
-        st.info("Esperando flujo de datos del mercado...")
+    # Verificación de datos
+    if df is None or df.empty or len(df) < 2:
+        st.warning(f"⚠️ Sin conexión con {ticker_actual}. Intenta cambiar el rango o el activo.")
         return
 
-    # 3. CÁLCULOS TÉCNICOS EXPRESS
+    # 3. CÁLCULOS TÉCNICOS (Vectorizados para velocidad)
+    # EMA 20
     df['EMA'] = df['Close'].ewm(span=20, adjust=False).mean()
     
-    # RSI (Cálculo rápido)
+    # RSI 14
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
 
-    # Niveles Dinámicos
-    h_max, l_min = df['High'].max(), df['Low'].min()
-    current_price = df['Close'].iloc[-1]
-    trend = "ALCISTA 🟢" if current_price > df['EMA'].iloc[-1] else "BAJISTA 🔴"
+    # Métricas de Rango
+    h_max = float(df['High'].max())
+    l_min = float(df['Low'].min())
+    last_price = float(df['Close'].iloc[-1])
+    trend = "ALCISTA 🟢" if last_price > df['EMA'].iloc[-1] else "BAJISTA 🔴"
 
     # 4. DASHBOARD DE MÉTRICAS (Fuera del gráfico)
     st.markdown("---")
@@ -258,23 +266,25 @@ def render_optimized_chart():
     m1.metric("MÁXIMO", f"{h_max:,.2f}")
     m2.metric("MÍNIMO", f"{l_min:,.2f}")
     m3.metric("TENDENCIA", trend)
-    m4.metric("ÚLTIMO RSI", f"{df['RSI'].iloc[-1]:.1f}")
+    m4.metric("RSI ACTUAL", f"{df['RSI'].iloc[-1]:.1f}" if not pd.isna(df['RSI'].iloc[-1]) else "N/A")
 
-    # 5. GRÁFICO DE VELAS + VOLUMEN (Renderizado en un solo paso)
+    # 5. CONSTRUCCIÓN DEL GRÁFICO (Optimizado)
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.02, row_width=[0.2, 0.8])
+                        vertical_spacing=0.03, row_width=[0.2, 0.8])
 
-    # Velas e Indicadores
+    # Velas
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+        name=st.session_state.ticker_name, 
+        increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA'], line=dict(color='#A67B5B', width=1), name="EMA 20"), row=1, col=1)
+    # EMA Superpuesta
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA'], line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
 
-    # Soportes y Resistencias (Lineas horizontales fijas al rango)
-    fig.add_hline(y=h_max, line_dash="dash", line_color="#ff3131", opacity=0.3)
-    fig.add_hline(y=l_min, line_dash="dash", line_color="#00ff41", opacity=0.3)
+    # Soportes y Resistencias Dinámicos
+    fig.add_hline(y=h_max, line_dash="dash", line_color="#ff3131", opacity=0.5, annotation_text="RES")
+    fig.add_hline(y=l_min, line_dash="dash", line_color="#00ff41", opacity=0.5, annotation_text="SUP")
 
     # Volumen
     colors = ['#00ff41' if row['Open'] < row['Close'] else '#ff3131' for i, row in df.iterrows()]
@@ -290,4 +300,4 @@ def render_optimized_chart():
 
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-render_optimized_chart()
+render_shielded_chart()
