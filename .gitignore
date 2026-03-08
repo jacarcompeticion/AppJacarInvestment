@@ -1,0 +1,13 @@
+# Seguridad: No subir llaves ni tokens
+credentials.json
+token.json
+
+# Base de Datos: No subir la DB local (Streamlit creará la suya)
+*.db
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+
+# Configuración local de Streamlit
+.streamlit/
