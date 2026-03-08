@@ -1,89 +1,70 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
-import plotly.graph_objects as go
 from datetime import datetime
 
-# 1. Configuración de Página
-st.set_page_config(page_title="Wolf v94 - Step 1", layout="wide")
+# --- 1. CONFIGURACIÓN E IDENTIDAD ---
+st.set_page_config(page_title="Wolf Sovereign V94", layout="wide", page_icon="🐺")
 
-# 2. Persistencia de Ventanas (El corazón de la navegación)
-if 'view' not in st.session_state: st.session_state.view = "Lobo"
-if 'ticker' not in st.session_state: st.session_state.ticker = "NQ=F" # US100
-
-# 3. Estilos CSS Básicos (Bloomberg Style)
+# CSS para mantener la estética Bloomberg/Lobo
 st.markdown("""
     <style>
     .stApp { background-color: #05070a; color: #e1e1e1; }
-    .nav-bar { display: flex; gap: 10px; margin-bottom: 20px; }
-    .kpi-header { background: #0d1117; border-bottom: 2px solid #d4af37; padding: 15px; margin-bottom: 20px; }
+    .kpi-header { 
+        background: #0d1117; border-bottom: 2px solid #d4af37; 
+        padding: 20px; margin-bottom: 20px; text-align: center;
+    }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# 4. Header de Control
-st.markdown('<div class="kpi-header"><h2>🐺 Wolf Sovereign Terminal</h2></div>', unsafe_allow_html=True)
+# --- 2. INICIALIZACIÓN DE ESTADOS (Persistencia) ---
+if 'view' not in st.session_state: st.session_state.view = "Dashboard"
+if 'ticker' not in st.session_state: st.session_state.ticker = "NQ=F" # Nasdaq por defecto
 
-# 5. Barra de Navegación Real (Paso a paso)
+# --- 3. BARRA DE NAVEGACIÓN ---
+st.markdown('<div class="kpi-header"><h1>🐺 JACAR INVESTMENT SOVEREIGN</h1></div>', unsafe_allow_html=True)
+
 col_nav = st.columns(4)
-if col_nav[0].button("🏠 LOBO (Gráficos)", use_container_width=True): st.session_state.view = "Lobo"
-if col_nav[1].button("💼 XTB (Órdenes)", use_container_width=True): st.session_state.view = "XTB"
-if col_nav[2].button("⚙️ AJUSTES", use_container_width=True): st.session_state.view = "Ajustes"
-if col_nav[3].button("🧪 AUDITORÍA", use_container_width=True): st.session_state.view = "Audit"
+if col_nav[0].button("🏠 LOBO"): st.session_state.view = "Lobo"
+if col_nav[1].button("💼 XTB"): st.session_state.view = "XTB"
+if col_nav[2].button("📈 RATIOS"): st.session_state.view = "Ratios"
+if col_nav[3].button("⚙️ AJUSTES"): st.session_state.view = "Ajustes"
 
-# ==========================================
-# VISTA 1: LOBO (EL MOTOR GRÁFICO)
-# ==========================================
+st.divider()
+
+# --- 4. LÓGICA DE VENTANAS ---
+
+# VENTANA: LOBO (Gráficos Base)
 if st.session_state.view == "Lobo":
-    st.subheader(f"Análisis en Vivo: {st.session_state.ticker}")
+    st.subheader(f"Monitor de Mercado: {st.session_state.ticker}")
     
-    # Selector rápido de activos
+    # Selector rápido para probar que el cambio de datos funciona
     c1, c2, c3 = st.columns(3)
-    if c1.button("Nasdaq (US100)"): st.session_state.ticker = "NQ=F"
-    if c2.button("Oro (GOLD)"): st.session_state.ticker = "GC=F"
-    if c3.button("Bitcoin"): st.session_state.ticker = "BTC-USD"
+    if c1.button("NASDAQ (US100)"): st.session_state.ticker = "NQ=F"
+    if c2.button("ORO (GOLD)"): st.session_state.ticker = "GC=F"
+    if c3.button("BITCOIN"): st.session_state.ticker = "BTC-USD"
 
-    # Descarga de datos con LIMPIEZA TOTAL
-    df = yf.download(st.session_state.ticker, period="5d", interval="15m", progress=False)
+    # Descarga limpia
+    df = yf.download(st.session_state.ticker, period="2d", interval="15m", progress=False)
     
     if not df.empty:
-        # Aplanar MultiIndex (Esto evita que el gráfico salga en blanco)
+        # Limpieza de columnas MultiIndex (Vital para evitar errores)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
-        # Gráfico de Velas
-        fig = go.Figure(data=[go.Candlestick(
-            x=df.index,
-            open=df['Open'], high=df['High'],
-            low=df['Low'], close=df['Close'],
-            name="Velas Reales"
-        )])
-        
-        fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
-        
+        st.write("✅ Datos cargados correctamente.")
+        st.dataframe(df.tail(5), use_container_width=True)
     else:
-        st.error("Error cargando datos de Yahoo Finance. Reintenta en unos segundos.")
+        st.error("No se han podido recuperar datos. Revisa la conexión.")
 
-# ==========================================
-# VISTA 2: XTB (SIMULACIÓN DE ÓRDENES)
-# ==========================================
+# VENTANA: XTB (Simulación)
 elif st.session_state.view == "XTB":
-    st.subheader("💼 Gestión de Cartera XTB")
-    st.info("Aquí conectaremos la xAPI de XTB en el siguiente paso.")
-    st.table(pd.DataFrame({"Activo": ["US100"], "Estado": ["Protegido"], "PnL": ["+240€"]}))
+    st.subheader("💼 Terminal de Órdenes XTB")
+    st.info("Módulo de conexión xAPI preparado para el Paso 3.")
 
-# ==========================================
-# VISTA 3: AJUSTES
-# ==========================================
+# VENTANA: AJUSTES
 elif st.session_state.view == "Ajustes":
-    st.subheader("⚙️ Configuración de Capital")
-    st.number_input("Capital Inicial (€)", value=18850.0)
-    st.slider("Riesgo por Operación (%)", 0.1, 5.0, 1.5)
-
-# ==========================================
-# VISTA 4: AUDITORÍA
-# ==========================================
-elif st.session_state.view == "Audit":
-    st.subheader("🧪 Logs del Sistema")
-    st.code(f"[{datetime.now()}] Sistema iniciado correctamente.\n[{datetime.now()}] Vista actual: {st.session_state.view}")
+    st.subheader("⚙️ Configuración del Sistema")
+    st.number_input("Capital de la cuenta", value=18850.0)
+    st.success("Ajustes detectados correctamente.")
