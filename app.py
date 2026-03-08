@@ -4,8 +4,8 @@ import streamlit as st
 st.set_page_config(page_title="Wolf Sovereign V94", layout="wide")
 
 # 2. Inicialización del Estado de Navegación (Ahora con 6 secciones)
-if 'view' not in st.session_state:
-    st.session_state.view = "Lobo"
+if 'active_cat' not in st.session_state: st.session_state.active_cat = "indices"
+if 'ticker' not in st.session_state: st.session_state.ticker = "US100"
 
 # 3. Identidad Visual y Estilo de Botones (Fondo diferente a las letras)
 st.markdown("""
