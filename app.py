@@ -1,3 +1,6 @@
+import streamlit as st
+import yfinance as yf
+
 # =========================================================
 # BLOQUE 1: MOTOR DE ESTILOS (COLORES FIJOS Y ESPACIADO 0)
 # =========================================================
