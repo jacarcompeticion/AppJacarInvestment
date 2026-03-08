@@ -59,7 +59,44 @@ st.divider()
 # 5. Renderizado de Contenido según la selección
 if st.session_state.view == "Lobo":
     st.header("🐺 PANEL LOBO")
-    st.info("Estructura visual lista. ¿Pasamos a colocar el gráfico aquí?")
+    st.info("Estructura visual lista. ¿Pasamos a colocar el gráfico aquí?")if st.session_state.view == "Lobo":
+    st.header("🐺 PANEL LOBO")
+
+    # Mapeo de Activos (Requisito 9: XTB Names)
+    # Nota: He configurado los nombres tal cual aparecen en XTB
+    xtb_assets = {
+        "indices": ["US100", "US500", "DE40", "SPA35", "UK100"],
+        "stocks": ["NVDA.US", "TSLA.US", "AAPL.US", "MSFT.US", "SAN.MC", "BBVA.MC"],
+        "material": ["GOLD", "SILVER", "OIL.WTI", "NATGAS"],
+        "divisas": ["EURUSD", "GBPUSD", "USDJPY", "BITCOIN"]
+    }
+
+    # 1. Selector de Categorías (Separadas por completo)
+    # Usamos un contenedor con fondo diferente para resaltar
+    st.markdown("### 🗂️ Selecciona Categoría")
+    c_cat = st.columns(4)
+    if c_cat[0].button("🏛️ INDICES", use_container_width=True): st.session_state.active_cat = "indices"
+    if c_cat[1].button("📈 STOCKS", use_container_width=True): st.session_state.active_cat = "stocks"
+    if c_cat[2].button("🏗️ MATERIAL", use_container_width=True): st.session_state.active_cat = "material"
+    if c_cat[3].button("💱 DIVISAS", use_container_width=True): st.session_state.active_cat = "divisas"
+
+    st.markdown(f"**Categoría activa:** `{st.session_state.active_cat.upper()}`")
+    st.divider()
+
+    # 2. Selector de Activos (Aparece según la categoría elegida)
+    st.markdown(f"### 🔎 Activos en {st.session_state.active_cat.upper()}")
+    activos = xtb_assets[st.session_state.active_cat]
+    
+    # Creamos columnas dinámicas según el número de activos
+    c_act = st.columns(len(activos))
+    for i, activo in enumerate(activos):
+        if c_act[i].button(activo, key=f"btn_{activo}", use_container_width=True):
+            st.session_state.ticker = activo
+
+    # 3. Espacio para el Gráfico (Paso siguiente)
+    st.markdown("---")
+    st.subheader(f"📊 Análisis Actual: {st.session_state.ticker}")
+    st.info(f"Sistema preparado para cargar el gráfico de {st.session_state.ticker}. ¿Lo inyectamos ahora?")
 
 elif st.session_state.view == "XTB":
     st.header("💼 GESTIÓN XTB")
