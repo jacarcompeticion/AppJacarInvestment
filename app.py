@@ -1,143 +1,150 @@
 import streamlit as st
+import yfinance as yf
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import datetime
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Wolf Sovereign V94", layout="wide", page_icon="🐺")
+# =========================================================
+# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (ESTILOS)
+# =========================================================
+st.set_page_config(page_title="Wolf Sovereign V95", layout="wide", page_icon="🐺")
 
-# 2. INICIALIZACIÓN DE ESTADOS
-if 'view' not in st.session_state: st.session_state.view = "Lobo"
-if 'active_cat' not in st.session_state: st.session_state.active_cat = "indices"
-if 'active_sub' not in st.session_state: st.session_state.active_sub = None
-if 'ticker' not in st.session_state: st.session_state.ticker = "NQ=F"
-
-# 3. ESTILO AVANZADO (Botones compactos y logos integrados)
 st.markdown("""
     <style>
     .stApp { background-color: #05070a; color: #e1e1e1; }
-    
-    /* Botones de Navegación Superior */
+    /* Estilo KPIs Superiores */
+    .kpi-row {
+        background-color: #0d1117; padding: 12px; border-bottom: 2px solid #d4af37;
+        display: flex; justify-content: space-around; font-family: monospace; font-size: 1rem;
+    }
+    .kpi-val { color: #d4af37; font-weight: bold; }
+    /* Estilo Botones Navegación */
     div.stButton > button {
-        background-color: #161b22; color: #d4af37;           
-        border: 1px solid #333; border-radius: 8px;
-        height: 3em; font-weight: bold; font-size: 0.9rem;
+        background-color: #161b22; color: #d4af37; border: 1px solid #333;
+        border-radius: 6px; height: 3em; font-weight: bold;
     }
-    div.stButton > button:hover { border-color: #d4af37; background-color: #1c2128; }
-
-    /* Estilo para los botones de activos (más pequeños) */
-    .asset-btn-container {
-        display: flex;
-        align-items: center;
-        background-color: #161b22;
-        border: 1px solid #333;
-        border-radius: 5px;
-        padding: 5px 10px;
-        margin-bottom: 5px;
-        cursor: pointer;
-    }
-    .asset-btn-container:hover { border-color: #d4af37; }
+    div.stButton > button:hover { border-color: #d4af37; background: #1c2128; }
+    /* Ticker Hot Assets */
+    .hot-label { font-size: 0.8rem; margin-bottom: 5px; color: #888; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DATOS ESTRUCTURADA (Mapeo XTB -> Yahoo) ---
-# Hemos actualizado las imágenes a iconos de alta disponibilidad
+# =========================================================
+# BLOQUE 2: ESTADOS Y PERSISTENCIA (DATOS)
+# =========================================================
+if 'setup' not in st.session_state:
+    st.session_state.update({
+        'view': "Lobo", 'active_cat': "indices", 'active_sub': None,
+        'ticker': "NQ=F", 'ticker_name': "US100",
+        'wallet': 18850.00, 'margen': 15200.00, 'objetivo': 2500.00, 'pnl': 420.50,
+        'setup': True
+    })
+
+# Base de Datos (Mapeo XTB -> Yahoo)
 DATABASE = {
     "indices": {
-        "EEUU": {
-            "US100": ["NQ=F", "🇺🇸"],
-            "US500": ["ES=F", "🇺🇸"]
-        },
-        "EUROPA": {
-            "DE40": ["^GDAXI", "🇩🇪"],
-            "SPA35": ["^IBEX", "🇪🇸"]
-        }
+        "EEUU": {"US100": ["NQ=F", "🇺🇸"], "US500": ["ES=F", "🇺🇸"]},
+        "EUROPA": {"DE40": ["^GDAXI", "🇩🇪"], "SPA35": ["^IBEX", "🇪🇸"]}
     },
     "acciones": {
-        "TECNOLOGÍA": {
-            "NVDA.US": ["NVDA", "🟢"],
-            "TSLA.US": ["TSLA", "🔴"],
-            "AAPL.US": ["AAPL", "⚪"]
-        },
-        "BANCA ESPAÑA": {
-            "SAN.MC": ["SAN.MC", "🔴"],
-            "BBVA.MC": ["BBVA.MC", "🔵"]
-        }
+        "TECNOLOGÍA": {"NVDA.US": ["NVDA", "🟢"], "TSLA.US": ["TSLA", "🔴"], "AAPL.US": ["AAPL", "⚪"]},
+        "BANCA ESPAÑA": {"SAN.MC": ["SAN.MC", "🔴"], "BBVA.MC": ["BBVA.MC", "🔵"]}
     },
     "material": {
-        "METALES": {
-            "GOLD": ["GC=F", "🟡"],
-            "SILVER": ["SI=F", "⚪"]
-        },
-        "ENERGÍA": {
-            "OIL.WTI": ["CL=F", "🛢️"],
-            "OIL.BRENT": ["BZ=F", "🌍"],
-            "NATGAS": ["NG=F", "🔥"]
-        }
+        "METALES": {"GOLD": ["GC=F", "🟡"], "SILVER": ["SI=F", "⚪"]},
+        "ENERGÍA": {"OIL.WTI": ["CL=F", "🛢️"], "OIL.BRENT": ["BZ=F", "🌍"], "NATGAS": ["NG=F", "🔥"]}
     },
     "divisas": {
-        "MAJORS": {
-            "EURUSD": ["EURUSD=X", "🇪🇺"],
-            "GBPUSD": ["GBPUSD=X", "🇬🇧"]
-        },
-        "CRYPTO": {
-            "BITCOIN": ["BTC-USD", "₿"]
-        }
+        "MAJORS": {"EURUSD": ["EURUSD=X", "🇪🇺"], "GBPUSD": ["GBPUSD=X", "🇬🇧"]},
+        "CRYPTO": {"BITCOIN": ["BTC-USD", "₿"]}
     }
 }
 
-st.title("🐺 JACAR INVESTMENT SOVEREIGN")
+# =========================================================
+# BLOQUE 3: HEADER FIJO (CAPITAL Y TICKER CALIENTE)
+# =========================================================
+# 3.1 - Línea de Capital
+pnl_color = "#00ff41" if st.session_state.pnl >= 0 else "#ff3131"
+st.markdown(f"""
+    <div class="kpi-row">
+        <span>Capital: <span class="kpi-val">{st.session_state.wallet:,.2f}€</span></span>
+        <span>| Margen: <span class="kpi-val">{st.session_state.margen:,.2f}€</span></span>
+        <span>| Objetivo: <span class="kpi-val">{st.session_state.objetivo:,.2f}€</span></span>
+        <span>| PnL Abierto: <span style="color:{pnl_color}; font-weight:bold;">{st.session_state.pnl:,.2f}€</span></span>
+    </div>
+    """, unsafe_allow_html=True)
 
-# 4. BARRA DE NAVEGACIÓN PRINCIPAL
-nav_cols = st.columns(6)
-titles = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
-views = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
+# 3.2 - Ticker de Activos Calientes (Clicables)
+st.markdown("<div class='hot-label'>🔥 ACTIVOS CALIENTES (SENTINEL SIGNALS)</div>", unsafe_allow_html=True)
+hot_list = [
+    {"n": "US100", "i": "🇺🇸", "s": "BUY", "t": "NQ=F", "c": "#00ff41"},
+    {"n": "GOLD", "i": "🟡", "s": "BUY", "t": "GC=F", "c": "#00ff41"},
+    {"n": "BITCOIN", "i": "₿", "s": "SELL", "t": "BTC-USD", "c": "#ff3131"},
+    {"n": "NVDA.US", "i": "🟢", "s": "BUY", "t": "NVDA", "c": "#00ff41"},
+    {"n": "OIL.BRENT", "i": "🌍", "s": "BUY", "t": "BZ=F", "c": "#00ff41"}
+]
+h_cols = st.columns(len(hot_list))
+for idx, h in enumerate(hot_list):
+    st.markdown(f"<style>div[data-testid='stColumn']:nth-of-type({idx+1}) button {{ border-left: 5px solid {h['c']} !important; }}</style>", unsafe_allow_html=True)
+    if h_cols[idx].button(f"{h['i']} {h['n']}\n{h['s']}", key=f"h_{h['n']}", use_container_width=True):
+        st.session_state.ticker = h['t']
+        st.session_state.ticker_name = h['n']
+        st.toast(f"Cargando señal de {h['s']} para {h['n']}")
 
-for i, col in enumerate(nav_cols):
-    if col.button(titles[i], use_container_width=True):
-        st.session_state.view = views[i]
-        st.session_state.active_sub = None
-
+# =========================================================
+# BLOQUE 4: NAVEGACIÓN PRINCIPAL
+# =========================================================
+st.divider()
+nav = st.columns(6)
+btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDIC.", "📰 NOTICIAS", "⚙️ AJUSTES"]
+v_list = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
+for i, col in enumerate(nav):
+    if col.button(btns[i], use_container_width=True):
+        st.session_state.view = v_list[i]
 st.divider()
 
-# 5. LÓGICA DE VENTANA LOBO
+# =========================================================
+# BLOQUE 5: VENTANA LOBO (CATEGORÍAS Y ACTIVOS)
+# =========================================================
 if st.session_state.view == "Lobo":
-    # A. Categorías Principales
+    # 5.1 - Categorías
     c_cat = st.columns(4)
     cats = ["indices", "acciones", "material", "divisas"]
     icons = ["🏛️", "📈", "🏗️", "💱"]
-    
     for i, cat in enumerate(cats):
         if c_cat[i].button(f"{icons[i]} {cat.upper()}", use_container_width=True):
             st.session_state.active_cat = cat
             st.session_state.active_sub = None
 
-    # B. Subcategorías
+    # 5.2 - Subcategorías
     st.markdown(f"#### 📂 {st.session_state.active_cat.upper()}")
-    subcats = list(DATABASE[st.session_state.active_cat].keys())
-    c_sub = st.columns(max(len(subcats), 4))
-    
-    for i, sub in enumerate(subcats):
-        if c_sub[i].button(sub, key=f"sub_{sub}", use_container_width=True):
+    sub_list = list(DATABASE[st.session_state.active_cat].keys())
+    c_sub = st.columns(max(len(sub_list), 4))
+    for i, sub in enumerate(sub_list):
+        if c_sub[i].button(sub, key=f"s_{sub}", use_container_width=True):
             st.session_state.active_sub = sub
 
-    # C. Activos Finales (Logo e Imagen dentro del texto del botón)
+    # 5.3 - Activos Finales
     if st.session_state.active_sub:
         st.divider()
-        st.markdown(f"#### 💎 Selecciona Activo ({st.session_state.active_sub})")
-        activos_dict = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
-        
-        # Mostramos los activos en columnas más pequeñas (5 por fila)
+        items = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
         cols_act = st.columns(5)
-        for idx, (nombre_xtb, datos) in enumerate(activos_dict.items()):
-            # El logo ahora va dentro del string del botón para asegurar que carga
-            label = f"{datos[1]} {nombre_xtb}"
-            if cols_act[idx % 5].button(label, key=f"f_{nombre_xtb}", use_container_width=True):
-                st.session_state.ticker = datos[0]
-                st.toast(f"Cargando {nombre_xtb}...")
+        for idx, (name, data) in enumerate(items.items()):
+            if cols_act[idx % 5].button(f"{data[1]} {name}", key=f"f_{name}", use_container_width=True):
+                st.session_state.ticker = data[0]
+                st.session_state.ticker_name = name
 
-    st.markdown("---")
-    st.subheader(f"📊 Monitor: {st.session_state.ticker}")
-    st.info("Estructura de activos compacta y Brent añadido correctamente.")
-
-# Otras ventanas...
+# =========================================================
+# BLOQUE 6: VENTANA AJUSTES
+# =========================================================
 elif st.session_state.view == "Ajustes":
-    st.header("⚙️ CONFIGURACIÓN")
-    st.session_state.wallet = st.number_input("Wallet Inicial (€)", value=18850.0)
+    st.header("⚙️ Configuración")
+    st.session_state.wallet = st.number_input("Capital Inicial (€)", value=st.session_state.wallet)
+    st.session_state.objetivo = st.number_input("Meta Mensual (€)", value=st.session_state.objetivo)
+
+# =========================================================
+# BLOQUE 7: EL GRÁFICO (PRÓXIMO PASO)
+# =========================================================
+st.markdown("---")
+st.subheader(f"📊 Análisis: {st.session_state.ticker_name} ({st.session_state.ticker})")
+st.info("Bloques configurados. ¿Inyectamos el motor de velas en el Bloque 7?")
