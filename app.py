@@ -205,7 +205,7 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO BLINDADO V2 (CORRECCIÓN DE ERROR)
+# BLOQUE 7: MOTOR GRÁFICO PROFESIONAL (SIN HUECOS DE FIN DE SEMANA)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -216,11 +216,10 @@ import yfinance as yf
 def fetch_safe_data(symbol, period, interval):
     try:
         df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
-        # CORRECCIÓN CRÍTICA: Aplanar columnas si vienen en formato Multi-Index
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 def render_shielded_chart():
@@ -245,24 +244,22 @@ def render_shielded_chart():
         return
 
     # 3. CÁLCULOS TÉCNICOS
-    # Asegurar que Close sea numérico y sin nulos para los cálculos
     df = df.dropna(subset=['Close'])
     df['EMA'] = df['Close'].ewm(span=20, adjust=False).mean()
     
-    # RSI 14 (Cálculo robusto)
+    # RSI 14
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / (loss + 1e-9) # Evitar división por cero
+    rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
     # Métricas
-    h_max = float(df['High'].max())
-    l_min = float(df['Low'].min())
+    h_max, l_min = float(df['High'].max()), float(df['Low'].min())
     last_price = float(df['Close'].iloc[-1])
     trend = "ALCISTA 🟢" if last_price > df['EMA'].iloc[-1] else "BAJISTA 🔴"
 
-    # 4. DASHBOARD DE MÉTRICAS (Fuera del gráfico)
+    # 4. DASHBOARD DE MÉTRICAS
     st.markdown("---")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("MÁXIMO", f"{h_max:,.2f}")
@@ -270,31 +267,37 @@ def render_shielded_chart():
     m3.metric("TENDENCIA", trend)
     m4.metric("RSI ACTUAL", f"{df['RSI'].iloc[-1]:.1f}" if not pd.isna(df['RSI'].iloc[-1]) else "N/A")
 
-    # 5. GRÁFICO
+    # 5. CONSTRUCCIÓN DEL GRÁFICO
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                         vertical_spacing=0.03, row_width=[0.2, 0.8])
 
+    # Convertir el índice a string para eliminar los huecos temporales (Modo Ordinal)
+    df_plot = df.copy()
+    df_plot['time_str'] = df_plot.index.strftime('%d/%m %H:%M')
+
     # Velas
     fig.add_trace(go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name="Market", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+        x=df_plot['time_str'], open=df_plot['Open'], high=df_plot['High'], 
+        low=df_plot['Low'], close=df_plot['Close'],
+        name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
     # EMA
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA'], line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df_plot['time_str'], y=df_plot['EMA'], 
+                             line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
 
-    # Resistencias y Soportes
+    # Resistencias y Soportes (Usamos figuras de línea para que funcionen con el eje ordinal)
     fig.add_hline(y=h_max, line_dash="dash", line_color="#ff3131", opacity=0.4, annotation_text="RES")
     fig.add_hline(y=l_min, line_dash="dash", line_color="#00ff41", opacity=0.4, annotation_text="SUP")
 
-    # Volumen (Lógica corregida para evitar ValueError)
-    df['vol_color'] = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df['Open'], df['Close'])]
-    
-    fig.add_trace(go.Bar(
-        x=df.index, y=df['Volume'], 
-        marker_color=df['vol_color'], 
-        name="Volumen"
-    ), row=2, col=1)
+    # Volumen
+    df_plot['vol_color'] = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df_plot['Open'], df_plot['Close'])]
+    fig.add_trace(go.Bar(x=df_plot['time_str'], y=df_plot['Volume'], 
+                         marker_color=df_plot['vol_color'], name="Volumen"), row=2, col=1)
+
+    # CONFIGURACIÓN DEL EJE X PARA ELIMINAR HUECOS
+    fig.update_xaxes(type='category', nticks=10, row=1, col=1)
+    fig.update_xaxes(type='category', nticks=10, row=2, col=1)
 
     fig.update_layout(
         template="plotly_dark", height=600,
