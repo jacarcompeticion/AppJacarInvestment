@@ -1,10 +1,9 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
 
 # =========================================================
-# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (ESTILOS Y COLORES)
+# BLOQUE 1: CONFIGURACIÓN E IDENTIDAD (ESTILOS Y CONTRASTE)
 # =========================================================
 st.set_page_config(page_title="Wolf Sovereign V95", layout="wide", page_icon="🐺")
 
@@ -12,13 +11,11 @@ st.markdown("""
     <style>
     .stApp { background-color: #05070a; color: #e1e1e1; }
     
-    /* BLOQUE 3.1: Estilo de KPIs */
+    /* BLOQUE 3: KPIs y Ticker */
     .kpi-row {
         background-color: #0d1117; padding: 10px; border-bottom: 1px solid #333;
         display: flex; justify-content: space-around; font-family: monospace;
     }
-
-    /* BLOQUE 3.2: Ticker Animado (Bolsa Antigua) */
     .ticker-wrap {
         width: 100%; overflow: hidden; background: #000; 
         border-bottom: 2px solid #d4af37; padding: 10px 0;
@@ -29,36 +26,42 @@ st.markdown("""
     }
     .ticker-item {
         display: flex; align-items: center; gap: 10px;
-        padding: 0 50px; white-space: nowrap; font-family: 'JetBrains Mono', monospace;
-        font-size: 1.1rem;
+        padding: 0 50px; white-space: nowrap; font-family: monospace; font-size: 1.1rem;
     }
     @keyframes ticker {
         0% { transform: translateX(0); }
         100% { transform: translateX(-50%); }
     }
 
-    /* BLOQUE 4: Navegación Superior (Gris Oscuro) */
+    /* ESTILO DE BOTONES: FONDO VS LETRAS */
+    /* Botón General (Navegación y Subcategorías) */
     .nav-btn > div > button {
-        background-color: #1c2128 !important; color: #ffffff !important;
-        border: 1px solid #444 !important; height: 3em;
+        background-color: #1c2128 !important; /* Fondo Gris Oscuro */
+        color: #ffffff !important;           /* Letras Blancas */
+        border: 1px solid #444 !important;
+        height: 3em;
     }
 
-    /* BLOQUE 5: Menú Lobo (Dorado/Negro - Diferente al superior) */
+    /* Botón Categoría (Dorado Wolf) */
     .cat-btn > div > button {
-        background-color: #2b2101 !important; color: #d4af37 !important;
-        border: 1px solid #d4af37 !important; height: 3.5em;
+        background-color: #1a1501 !important; /* Fondo Negro-Marrón */
+        color: #d4af37 !important;           /* Letras Doradas */
+        border: 1px solid #d4af37 !important;
+        height: 3.5em;
     }
     
-    /* Estado ACTIVO (Resaltado Dorado Brillante) */
+    /* Estado ACTIVO (Inversión de colores para resaltar) */
     .active-btn > div > button {
-        background-color: #d4af37 !important; color: #000 !important;
-        font-weight: 900 !important; border: 1px solid #fff !important;
+        background-color: #d4af37 !important; /* Fondo Dorado */
+        color: #000000 !important;           /* Letras Negras */
+        font-weight: 900 !important;
+        border: 1px solid #ffffff !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 2: ESTADOS Y BASE DE DATOS (MAPEO XTB -> YAHOO)
+# BLOQUE 2: ESTADOS Y BASE DE DATOS
 # =========================================================
 if 'setup' not in st.session_state:
     st.session_state.update({
@@ -88,9 +91,8 @@ DATABASE = {
 }
 
 # =========================================================
-# BLOQUE 3: HEADER FIJO (CAPITAL Y TICKER ANIMADO)
+# BLOQUE 3: HEADER (KPIs Y TICKER)
 # =========================================================
-# 3.1 - KPIs Superiores
 pnl_color = "#00ff41" if st.session_state.pnl >= 0 else "#ff3131"
 st.markdown(f"""
     <div class="kpi-row">
@@ -100,96 +102,79 @@ st.markdown(f"""
     </div>
     """, unsafe_allow_html=True)
 
-# 3.2 - Ticker de Bolsa Antigua (Movimiento Continuo)
-hot_items = [
-    ("NQ=F", "US100", "🇺🇸", "BUY"), ("GC=F", "GOLD", "🟡", "BUY"),
-    ("BTC-USD", "BITCOIN", "₿", "SELL"), ("NVDA", "NVDA.US", "🟢", "BUY"),
-    ("BZ=F", "OIL.BRENT", "🌍", "BUY")
-]
-
-content = ""
-for t, n, i, s in hot_items * 5:
-    color = "#00ff41" if s == "BUY" else "#ff3131"
-    content += f'<div class="ticker-item">{i} {n} <span style="color:{color};">[{s}]</span></div>'
+hot_items = [("NQ=F", "US100", "🇺🇸", "BUY"), ("GC=F", "GOLD", "🟡", "BUY"), ("BTC-USD", "BITCOIN", "₿", "SELL")]
+content = "".join([f'<div class="ticker-item">{i} {n} <span style="color:{"#00ff41" if s=="BUY" else "#ff3131"};">[{s}]</span></div>' for t, n, i, s in hot_items * 6])
 st.markdown(f'<div class="ticker-wrap"><div class="ticker-move">{content}</div></div>', unsafe_allow_html=True)
 
-# 3.3 - Ventana Flotante de Acción (Expander para Alertas)
-with st.expander("⚡ ALERTAS SENTINEL (Click para ver recomendación)"):
-    t_cols = st.columns(len(hot_items))
-    for idx, (t, n, i, s) in enumerate(hot_items):
-        if t_cols[idx].button(f"INFO {n}", key=f"alert_{n}"):
-            st.session_state.ticker = t
-            st.session_state.ticker_name = n
-            st.info(f"📍 SEÑAL SENTINEL: {s} en {n}. Objetivo +2%, Riesgo -1%.")
-
 # =========================================================
-# BLOQUE 4: NAVEGACIÓN PRINCIPAL (Selector de Ventanas)
+# BLOQUE 4: NAVEGACIÓN SUPERIOR
 # =========================================================
+st.write("")
 nav = st.columns(6)
 btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
 v_list = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
 
 for i, col in enumerate(nav):
     is_active = st.session_state.view == v_list[i]
-    style_class = "active-btn" if is_active else "nav-btn"
+    style = "active-btn" if is_active else "nav-btn"
     with col:
-        st.markdown(f'<div class="{style_class}">', unsafe_allow_html=True)
-        if st.button(btns[i], key=f"view_{i}", use_container_width=True):
+        st.markdown(f'<div class="{style}">', unsafe_allow_html=True)
+        if st.button(btns[i], key=f"v_{i}", use_container_width=True):
             st.session_state.view = v_list[i]
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 5: VENTANA LOBO (MENÚ EN CASCADA REAL)
+# BLOQUE 5: VENTANA LOBO (CASCADA ESTRICTA)
 # =========================================================
 if st.session_state.view == "Lobo":
     st.divider()
-    # 5.1 - Categorías (Dorado/Negro)
+    # 5.1 - CATEGORÍAS (Siempre visibles)
     c_cat = st.columns(4)
     cats = ["indices", "acciones", "material", "divisas"]
     icons = ["🏛️", "📈", "🏗️", "💱"]
     
     for i, cat in enumerate(cats):
         is_active = st.session_state.active_cat == cat
-        style_class = "active-btn" if is_active else "cat-btn"
+        style = "active-btn" if is_active else "cat-btn"
         with c_cat[i]:
-            st.markdown(f'<div class="{style_class}">', unsafe_allow_html=True)
-            if st.button(f"{icons[i]} {cat.upper()}", key=f"btn_cat_{cat}", use_container_width=True):
+            st.markdown(f'<div class="{style}">', unsafe_allow_html=True)
+            if st.button(f"{icons[i]} {cat.upper()}", key=f"c_{cat}", use_container_width=True):
                 st.session_state.active_cat = cat
-                st.session_state.active_sub = None # Reset sub al cambiar
+                st.session_state.active_sub = None # Cerramos subcategorías al cambiar categoría
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 5.2 - Subcategorías (Ocultas hasta que hagas clic en Categoría)
+    # 5.2 - SUBCATEGORÍAS (Solo si hay categoría seleccionada)
     if st.session_state.active_cat:
-        st.write(f"📂 Selecciona Subcategoría de **{st.session_state.active_cat.upper()}**:")
+        st.write(f"---")
+        st.write(f"📂 Subcategorías de {st.session_state.active_cat.upper()}:")
         sub_list = list(DATABASE[st.session_state.active_cat].keys())
         c_sub = st.columns(max(len(sub_list), 4))
         for i, sub in enumerate(sub_list):
             is_active = st.session_state.active_sub == sub
-            style_class = "active-btn" if is_active else "nav-btn"
+            style = "active-btn" if is_active else "nav-btn"
             with c_sub[i]:
-                st.markdown(f'<div class="{style_class}">', unsafe_allow_html=True)
-                if st.button(sub, key=f"btn_sub_{sub}", use_container_width=True):
+                st.markdown(f'<div class="{style}">', unsafe_allow_html=True)
+                if st.button(sub, key=f"s_{sub}", use_container_width=True):
                     st.session_state.active_sub = sub
                 st.markdown('</div>', unsafe_allow_html=True)
 
-    # 5.3 - Activos (Ocultos hasta que hagas clic en Subcategoría)
-    if st.session_state.active_sub:
-        st.write(f"💎 Activos en **{st.session_state.active_sub}**:")
-        items = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
-        cols_act = st.columns(6)
-        for idx, (name, data) in enumerate(items.items()):
-            is_active = st.session_state.ticker_name == name
-            style_class = "active-btn" if is_active else "nav-btn"
-            with cols_act[idx % 6]:
-                st.markdown(f'<div class="{style_class}">', unsafe_allow_html=True)
-                if st.button(f"{data[1]} {name}", key=f"btn_act_{name}", use_container_width=True):
-                    st.session_state.ticker = data[0]
-                    st.session_state.ticker_name = name
-                st.markdown('</div>', unsafe_allow_html=True)
+        # 5.3 - ACTIVOS (Solo si hay subcategoría seleccionada)
+        if st.session_state.active_sub:
+            st.write(f"💎 Activos en {st.session_state.active_sub}:")
+            items = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
+            cols_act = st.columns(6)
+            for idx, (name, data) in enumerate(items.items()):
+                is_active = st.session_state.ticker_name == name
+                style = "active-btn" if is_active else "nav-btn"
+                with cols_act[idx % 6]:
+                    st.markdown(f'<div class="{style}">', unsafe_allow_html=True)
+                    if st.button(f"{data[1]} {name}", key=f"f_{name}", use_container_width=True):
+                        st.session_state.ticker = data[0]
+                        st.session_state.ticker_name = name
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: ESPACIO PARA GRÁFICO
+# BLOQUE 7: MONITOR
 # =========================================================
 st.markdown("---")
-st.subheader(f"📊 MONITOR ACTIVO: {st.session_state.ticker_name} | {st.session_state.ticker}")
-st.info("Estructura de cascada y ticker de bolsa antigua verificados. ¿Inyectamos el gráfico de velas ahora?")
+st.subheader(f"📊 MONITOR: {st.session_state.ticker_name}")
