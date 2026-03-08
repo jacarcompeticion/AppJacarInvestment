@@ -205,7 +205,7 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO BLINDADO (V95)
+# BLOQUE 7: MOTOR GRÁFICO BLINDADO V2 (CORRECCIÓN DE ERROR)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -215,15 +215,17 @@ import yfinance as yf
 @st.cache_data(ttl=60)
 def fetch_safe_data(symbol, period, interval):
     try:
-        # Descarga forzada con auto_adjust para evitar errores de dividendos/splits
         df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        # CORRECCIÓN CRÍTICA: Aplanar columnas si vienen en formato Multi-Index
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         return df
-    except:
+    except Exception as e:
         return pd.DataFrame()
 
 def render_shielded_chart():
     # 1. DESPLEGABLE DE RANGO
-    c_sel, c_met = st.columns([1, 4])
+    c_sel, _ = st.columns([1, 4])
     with c_sel:
         opciones = {
             "1m (1 hora)": ["1h", "1m"],
@@ -238,23 +240,23 @@ def render_shielded_chart():
     ticker_actual = st.session_state.ticker
     df = fetch_safe_data(ticker_actual, periodo, intervalo)
     
-    # Verificación de datos
     if df is None or df.empty or len(df) < 2:
-        st.warning(f"⚠️ Sin conexión con {ticker_actual}. Intenta cambiar el rango o el activo.")
+        st.warning(f"⚠️ Esperando datos de {ticker_actual}...")
         return
 
-    # 3. CÁLCULOS TÉCNICOS (Vectorizados para velocidad)
-    # EMA 20
+    # 3. CÁLCULOS TÉCNICOS
+    # Asegurar que Close sea numérico y sin nulos para los cálculos
+    df = df.dropna(subset=['Close'])
     df['EMA'] = df['Close'].ewm(span=20, adjust=False).mean()
     
-    # RSI 14
+    # RSI 14 (Cálculo robusto)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
+    rs = gain / (loss + 1e-9) # Evitar división por cero
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # Métricas de Rango
+    # Métricas
     h_max = float(df['High'].max())
     l_min = float(df['Low'].min())
     last_price = float(df['Close'].iloc[-1])
@@ -268,27 +270,31 @@ def render_shielded_chart():
     m3.metric("TENDENCIA", trend)
     m4.metric("RSI ACTUAL", f"{df['RSI'].iloc[-1]:.1f}" if not pd.isna(df['RSI'].iloc[-1]) else "N/A")
 
-    # 5. CONSTRUCCIÓN DEL GRÁFICO (Optimizado)
+    # 5. GRÁFICO
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                         vertical_spacing=0.03, row_width=[0.2, 0.8])
 
     # Velas
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name=st.session_state.ticker_name, 
-        increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+        name="Market", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    # EMA Superpuesta
+    # EMA
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA'], line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
 
-    # Soportes y Resistencias Dinámicos
-    fig.add_hline(y=h_max, line_dash="dash", line_color="#ff3131", opacity=0.5, annotation_text="RES")
-    fig.add_hline(y=l_min, line_dash="dash", line_color="#00ff41", opacity=0.5, annotation_text="SUP")
+    # Resistencias y Soportes
+    fig.add_hline(y=h_max, line_dash="dash", line_color="#ff3131", opacity=0.4, annotation_text="RES")
+    fig.add_hline(y=l_min, line_dash="dash", line_color="#00ff41", opacity=0.4, annotation_text="SUP")
 
-    # Volumen
-    colors = ['#00ff41' if row['Open'] < row['Close'] else '#ff3131' for i, row in df.iterrows()]
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volumen"), row=2, col=1)
+    # Volumen (Lógica corregida para evitar ValueError)
+    df['vol_color'] = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df['Open'], df['Close'])]
+    
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['Volume'], 
+        marker_color=df['vol_color'], 
+        name="Volumen"
+    ), row=2, col=1)
 
     fig.update_layout(
         template="plotly_dark", height=600,
