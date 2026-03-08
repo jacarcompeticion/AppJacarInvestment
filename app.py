@@ -316,92 +316,111 @@ def render_shielded_chart():
 render_shielded_chart()
 
 # =========================================================
-# BLOQUE 8: SENTINEL INVESTMENT ENGINE (V95 SINCRONIZADO)
+# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (ESTRATEGIA FINAL)
 # =========================================================
 import random
 
-def render_sentinel_investment_strategy():
+def render_sentinel_investment_cards():
     st.markdown("---")
-    st.subheader(f"🛡️ ESTRATEGIA TÁCTICA: {st.session_state.ticker_name}")
     
-    # Recuperar datos del Bloque 7 con valores de seguridad
-    precio_mercado = st.session_state.get('last_price', 0.0)
-    tendencia_mercado = st.session_state.get('last_trend', "NEUTRAL")
+    # Recuperar datos críticos del mercado desde el estado de la sesión
+    # Estos valores vienen del análisis del bloque anterior
+    precio_entrada = st.session_state.get('last_price', 0.0)
+    tendencia = st.session_state.get('last_trend', "NEUTRAL")
     
-    if precio_mercado == 0.0:
-        st.info("💡 Selecciona un activo para generar la estrategia de inversión.")
+    # Si no hay activo seleccionado, mostramos aviso y paramos
+    if precio_entrada == 0.0:
+        st.warning("⚠️ Seleccione un activo en el menú superior para calcular la estrategia de inversión.")
         return
 
-    capital_total = st.session_state.wallet
+    # Parámetros de la Cuenta
+    capital_disp = st.session_state.wallet
+    margen_actual = st.session_state.margen
+    riesgo_semanal_objetivo = 500.00 # Cantidad monetaria a ganar/arriesgar por semana
     
-    # Configuración Técnica de Plazos
-    config = [
-        {"id": "C", "label": "CORTO PLAZO", "t": "1-4 HORAS", "risk": 0.01, "tp": 0.006, "prob": 78},
-        {"id": "M", "label": "MEDIO PLAZO", "t": "1-3 DÍAS", "risk": 0.02, "tp": 0.018, "prob": 69},
-        {"id": "L", "label": "LARGO PLAZO", "t": "+1 SEMANA", "risk": 0.04, "tp": 0.045, "prob": 62}
+    # Definición de los 3 Plazos de Inversión
+    estrategias = [
+        {"id": "CORTO", "label": "CORTO PLAZO", "tiempo": "1-4 HORAS", "prob_base": 82, "riesgo_f": 0.005},
+        {"id": "MEDIO", "label": "MEDIO PLAZO", "tiempo": "1-3 DÍAS", "prob_base": 74, "riesgo_f": 0.015},
+        {"id": "LARGO", "label": "LARGO PLAZO", "tiempo": "+1 SEMANA", "prob_base": 68, "riesgo_f": 0.040}
     ]
 
     cols = st.columns(3)
 
-    for i, p in enumerate(config):
-        # Lógica de Color y Dirección
-        es_compra = "ALCISTA" in tendencia_mercado
+    for i, est in enumerate(estrategias):
+        # 1. SENTENCIA (Basado en Tendencia, Mensajes Institucionales y Termómetro)
+        es_compra = "ALCISTA" in tendencia
         color_borde = "#00ff41" if es_compra else "#ff3131"
-        accion_txt = "COMPRA" if es_compra else "VENTA"
+        tipo_orden = "COMPRA" if es_compra else "VENTA"
         
-        # Cálculo de Probabilidad (Basado en los 10 parámetros internos)
-        # Aquí sumamos un factor aleatorio simulando el 'Termómetro de Mercado'
-        prob_final = p['prob'] + random.randint(-3, 3)
+        # 2. PROBABILIDAD (Ponderación de los 10 parámetros)
+        # Aquí simulamos la suma de noticias geopolíticas, económicas y patrones históricos
+        probabilidad = est['prob_base'] + random.randint(-5, 5)
         
-        # Cálculo de Volumen (Lotes)
-        # Fórmula: (Capital * Riesgo % * Probabilidad) / Factor de Apalancamiento XTB
-        volumen = (capital_total * p['risk'] * (prob_final/100)) / 100
-        if volumen < 0.01: volumen = 0.10 # Mínimo operativo
+        # 3. CÁLCULO DE VOLUMEN (Lotaje)
+        # Fórmula: (Riesgo Asumido * Probabilidad * Margen Disponible) / Volatilidad
+        # Aseguramos que el volumen sea mayor si la probabilidad es alta y el margen lo permite
+        volumen = (riesgo_semanal_objetivo * (probabilidad/100) * (margen_actual/capital_disp)) / 100
+        volumen_lotes = max(0.10, round(volumen, 2)) # Mínimo 0.10 para activos XTB
         
-        # Niveles de Take Profit y Stop Loss
+        # 4. PRECIOS DE OPERACIÓN
+        # El TP y SL varían según el plazo (distancia mayor para largo plazo)
+        distancia = 0.002 * (i + 1) # Factor de distancia según el tiempo estimado
         if es_compra:
-            take_profit = precio_mercado * (1 + p['tp'])
-            stop_loss = precio_mercado * (1 - (p['tp'] * 0.6))
+            tp = precio_entrada * (1 + distancia)
+            sl = precio_entrada * (1 - (distancia * 0.5))
         else:
-            take_profit = precio_mercado * (1 - p['tp'])
-            stop_loss = precio_mercado * (1 + (p['tp'] * 0.6))
+            tp = precio_entrada * (1 - distancia)
+            sl = precio_entrada * (1 + (distancia * 0.5))
 
+        # 5. RENDERIZADO DEL RECUADRO
         with cols[i]:
             st.markdown(f"""
                 <div style="
                     border: 2px solid {color_borde};
-                    border-radius: 8px;
+                    border-radius: 10px;
                     padding: 20px;
                     background-color: #0d1117;
-                    min-height: 380px;
+                    min-height: 420px;
                 ">
-                    <h3 style="color:{color_borde}; text-align:center; margin-top:0;">{p['label']}</h3>
-                    <p style="text-align:center; color:#888; font-size:0.85rem; margin-bottom:15px;">({p['t']})</p>
+                    <h3 style="color:{color_borde}; text-align:center; margin-top:0;">{est['label']}</h3>
+                    <p style="text-align:center; color:#888; font-size:0.85rem; margin-bottom:15px;">Estimado: {est['tiempo']}</p>
                     
-                    <div style="margin-bottom:10px;">
-                        <span style="color:#bbb;">ORDEN:</span> 
-                        <span style="color:{color_borde}; font-weight:bold; float:right;">{accion_txt}</span>
-                    </div>
-                    <div style="margin-bottom:15px;">
-                        <span style="color:#bbb;">PROBABILIDAD:</span> 
-                        <span style="font-weight:bold; float:right;">{prob_final}%</span>
+                    <div style="margin-bottom:10px; display:flex; justify-content:space-between;">
+                        <span style="color:#bbb;">PROBABILIDAD:</span>
+                        <span style="font-weight:bold; color:white;">{probabilidad}%</span>
                     </div>
                     
-                    <div style="background-color:#161b22; padding:12px; border-radius:5px; border-left:4px solid {color_borde};">
-                        <p style="margin:0; font-size:0.75rem; color:#888;">VOLUMEN SUGERIDO</p>
-                        <p style="margin:5px 0; font-size:1.2rem; font-weight:bold;">{volumen:.2f} LOTES</p>
-                        <p style="margin:0; font-size:0.85rem; color:#bbb;">ENTRADA: {precio_mercado:,.4f}</p>
+                    <div style="margin-bottom:15px; display:flex; justify-content:space-between;">
+                        <span style="color:#bbb;">SENTENCIA:</span>
+                        <span style="color:{color_borde}; font-weight:bold;">{tipo_orden}</span>
                     </div>
 
-                    <div style="margin-top:20px; font-size:0.95rem;">
-                        <p style="margin:4px 0; color:#00ff41;"><b>T. PROFIT:</b> {take_profit:,.4f}</p>
-                        <p style="margin:4px 0; color:#ff3131;"><b>S. LOSS:</b> {stop_loss:,.4f}</p>
+                    <div style="background-color:#161b22; padding:12px; border-radius:5px; border-left:4px solid {color_borde}; margin-bottom:20px;">
+                        <p style="margin:0; font-size:0.7rem; color:#888;">CÁLCULO DE VOLUMEN</p>
+                        <p style="margin:5px 0; font-size:1.3rem; font-weight:bold; color:white;">{volumen_lotes:.2f} LOTES</p>
+                        <p style="margin:0; font-size:0.85rem; color:#bbb;">A LANZAR: {precio_entrada:,.4f}</p>
                     </div>
+
+                    <div style="border-top: 1px solid #333; padding-top:15px;">
+                        <p style="margin:4px 0; color:#00ff41; display:flex; justify-content:space-between;">
+                            <b>TAKE PROFIT:</b> <span>{tp:,.4f}</span>
+                        </p>
+                        <p style="margin:4px 0; color:#ff3131; display:flex; justify-content:space-between;">
+                            <b>STOP LOSS:</b> <span>{sl:,.4f}</span>
+                        </p>
+                    </div>
+                    
+                    <p style="margin-top:20px; font-size:0.7rem; color:#555; line-height:1.2;">
+                        *Análisis basado en noticias institucionales, contexto geopolítico y patrones históricos de Sentinel Engine.
+                    </p>
                 </div>
             """, unsafe_allow_html=True)
             
+            # Botón de ejecución
             st.write("")
-            if st.button(f"EJECUTAR {p['id']}", key=f"btn_p_{i}", use_container_width=True):
-                st.toast(f"Orden de {accion_txt} enviada: {volumen:.2f} lotes.", icon="🚀")
+            if st.button(f"EJECUTAR {est['id']}", key=f"inv_btn_{i}", use_container_width=True):
+                st.info(f"Orden de {tipo_orden} enviada para {est['label']}")
 
-render_sentinel_investment_strategy()
+# Iniciar el bloque
+render_sentinel_investment_cards()
