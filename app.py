@@ -2,20 +2,17 @@ import streamlit as st
 import yfinance as yf
 
 # =========================================================
-# BLOQUE 1: MOTOR DE ESTILOS (COLORES FIJOS Y ESPACIADO 0)
+# BLOQUE 1: MOTOR DE ESTILOS (COLORES FIJOS Y SENTINEL ROJO)
 # =========================================================
 st.set_page_config(page_title="Wolf Sovereign V95", layout="wide", page_icon="🐺")
 
 st.markdown("""
     <style>
-    /* Fondo General */
     .stApp { background-color: #05070a; }
-    
-    /* ELIMINAR GAPS ENTRE FILAS PARA CASCADA PEGADA */
     [data-testid="stVerticalBlock"] { gap: 0rem !important; }
     div[data-testid="stColumn"] { padding: 0px !important; margin: 0px !important; }
 
-    /* --- 1. VENTANAS (NAV SUPERIOR): MARRÓN -> BLANCO (FIJADO) --- */
+    /* NAV SUPERIOR: MARRÓN -> BLANCO */
     div.nav-btn button {
         background-color: #A67B5B !important; color: #000000 !important;
         border: 1px solid #000 !important; border-radius: 0px !important; height: 3.5em !important;
@@ -25,27 +22,25 @@ st.markdown("""
         border: 2px solid #000000 !important; border-radius: 0px !important; height: 3.5em !important; font-weight: 900 !important;
     }
 
-    /* --- 2. MENÚ LOBO (CATEGORÍAS/SUB/ACTIVOS): BLANCO -> NEGRO (FIJADO) --- */
+    /* MENÚ LOBO: BLANCO -> NEGRO */
     div.menu-btn button {
         background-color: #FFFFFF !important; color: #000000 !important;
-        border: 1px solid #333333 !important; border-radius: 0px !important; height: 3em !important;
+        border: 1px solid #333333 !important; border-radius: 0px !important; height: 3.2em !important;
     }
     div.menu-active button {
         background-color: #000000 !important; color: #FFFFFF !important;
-        border: 1px solid #FFFFFF !important; border-radius: 0px !important; height: 3em !important; font-weight: bold !important;
+        border: 1px solid #FFFFFF !important; border-radius: 0px !important; height: 3.2em !important; font-weight: bold !important;
     }
 
-    /* --- 3. ACCIÓN SENTINEL: FONDO ROJO / LETRAS NEGRAS --- */
+    /* SENTINEL: ROJO / LETRAS NEGRAS */
     div.sentinel-btn button {
         background-color: #FF0000 !important; color: #000000 !important;
         border: 2px solid #000000 !important; font-weight: 900 !important; height: 4em !important;
-        margin-bottom: 10px !important;
     }
 
-    /* Espaciado para evitar solapamiento */
     .sentinel-space { margin-top: 60px !important; margin-bottom: 20px !important; }
 
-    /* Ticker Animado */
+    /* Ticker */
     .ticker-wrap {
         width: 100%; overflow: hidden; background: #000; border-bottom: 2px solid #A67B5B; padding: 10px 0;
     }
@@ -56,7 +51,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 2: BASE DE DATOS (3 SUBS / 10 ACTIVOS POR SUB)
+# BLOQUE 2: BASE DE DATOS (NOMBRES XTB + LOGOS)
 # =========================================================
 if 'setup' not in st.session_state:
     st.session_state.update({
@@ -65,30 +60,61 @@ if 'setup' not in st.session_state:
         'wallet': 18850.00, 'margen': 15200.00, 'pnl': 420.50, 'setup': True
     })
 
-# Generador dinámico para rellenar los 10 activos solicitados
-def gen_assets(cat_name, sub_name):
-    return {f"{cat_name}.{sub_name}.{i}": [f"TICK{i}", "📊"] for i in range(1, 11)}
-
 DATABASE = {
     "stocks": {
-        "TECNOLOGÍA": gen_assets("STK", "TECH"),
-        "BANCA": gen_assets("STK", "BANK"),
-        "ENERGÍA": gen_assets("STK", "ENER")
+        "TECNOLOGÍA": {
+            "APPLE (AAPL.US) 🍎": ["AAPL", ""], "TESLA (TSLA.US) ⚡": ["TSLA", ""], 
+            "NVIDIA (NVDA.US) 🟢": ["NVDA", ""], "AMAZON (AMZN.US) 📦": ["AMZN", ""],
+            "META (META.US) 📱": ["META", ""], "MICROSOFT (MSFT.US) 💻": ["MSFT", ""],
+            "ALPHABET (GOOGL.US) 🔍": ["GOOGL", ""], "NETFLIX (NFLX.US) 🎬": ["NFLX", ""],
+            "INTEL (INTC.US) 🔵": ["INTC", ""], "AMD (AMD.US) 🔴": ["AMD", ""]
+        },
+        "BANCA": {
+            "SANTANDER (SAN.MC) 🏦": ["SAN.MC", ""], "BBVA (BBVA.MC) 💙": ["BBVA.MC", ""],
+            "JPMORGAN (JPM.US) 🏛️": ["JPM", ""], "HSBC (HSBA.UK) 🦁": ["HSBA.L", ""]
+        },
+        "SALUD": {
+            "PFIZER (PFE.US) 💊": ["PFE", ""], "MODERNA (MRNA.US) 🧬": ["MRNA", ""]
+        }
     },
     "indices": {
-        "EEUU": gen_assets("IDX", "USA"),
-        "EUROPA": gen_assets("IDX", "EU"),
-        "ASIA": gen_assets("IDX", "ASIA")
+        "EEUU": {
+            "US100 (Nasdaq) 🇺🇸": ["NQ=F", ""], "US500 (S&P500) 🇺🇸": ["ES=F", ""], 
+            "US30 (Dow Jones) 🇺🇸": ["YM=F", ""], "RUSSELL2000 🇺🇸": ["RTY=F", ""]
+        },
+        "EUROPA": {
+            "DE40 (DAX) 🇩🇪": ["^GDAXI", ""], "SPA35 (IBEX) 🇪🇸": ["^IBEX", ""], 
+            "EU50 (Eurostoxx) 🇪🇺": ["^STOXX50E", ""], "FRA40 (CAC) 🇫🇷": ["^FCHI", ""]
+        },
+        "ASIA": {
+            "HK50 (Hang Seng) 🇭🇰": ["^HSI", ""], "JPN225 (Nikkei) 🇯🇵": ["^N225", ""]
+        }
     },
     "material": {
-        "METALES": gen_assets("MAT", "MET"),
-        "GRANOS": gen_assets("MAT", "GRA"),
-        "SOFT": gen_assets("MAT", "SOFT")
+        "ENERGÍA": {
+            "OIL.WTI (Petróleo) 🛢️": ["CL=F", ""], "OIL (Brent) 🌍": ["BZ=F", ""], 
+            "NATGAS (Gas) 🔥": ["NG=F", ""], "GASOIL 🚛": ["HO=F", ""],
+            "GASOLINE ⛽": ["RB=F", ""]
+        },
+        "METALES": {
+            "GOLD (Oro) 🟡": ["GC=F", ""], "SILVER (Plata) ⚪": ["SI=F", ""], 
+            "COPPER (Cobre) 🥉": ["HG=F", ""], "PLATINUM 💍": ["PL=F", ""],
+            "PALLADIUM 💎": ["PA=F", ""]
+        },
+        "GRANOS": {
+            "WHEAT (Trigo) 🌾": ["ZW=F", ""], "CORN (Maíz) 🌽": ["ZC=F", ""], 
+            "SOYBEAN (Soja) 🌱": ["ZS=F", ""]
+        }
     },
     "divisas": {
-        "MAJORS": gen_assets("DIV", "MAJ"),
-        "MINORS": gen_assets("DIV", "MIN"),
-        "CRYPTO": gen_assets("DIV", "CRYP")
+        "MAJORS": {
+            "EURUSD 🇪🇺🇺🇸": ["EURUSD=X", ""], "GBPUSD 🇬🇧🇺🇸": ["GBPUSD=X", ""], 
+            "USDJPY 🇺🇸🇯🇵": ["USDJPY=X", ""], "AUDUSD 🇦🇺🇺🇸": ["AUDUSD=X", ""]
+        },
+        "CRYPTO": {
+            "BITCOIN (BTC) ₿": ["BTC-USD", ""], "ETHEREUM (ETH) ⟠": ["ETH-USD", ""], 
+            "RIPPLE (XRP) 💠": ["XRP-USD", ""], "SOLANA (SOL) ☀️": ["SOL-USD", ""]
+        }
     }
 }
 
@@ -104,19 +130,19 @@ hot_list = [("NQ=F", "US100", "🇺🇸", "COMPRAR"), ("GC=F", "GOLD", "🟡", "
 content = "".join([f'<div class="ticker-item">{i} {n} <span style="color:{"#00ff41" if s=="COMPRAR" else "#ff3131"};">[{s}]</span></div>' for t, n, i, s in hot_list * 10])
 st.markdown(f'<div class="ticker-wrap"><div class="ticker-move">{content}</div></div>', unsafe_allow_html=True)
 
-# ESPACIADO Y ACCIÓN SENTINEL (FONDO ROJO)
+# ACCIÓN SENTINEL (ROJO)
 st.markdown('<div class="sentinel-space"></div>', unsafe_allow_html=True)
-with st.expander("🚨 ALERTAS CRÍTICAS SENTINEL (Click para Acción)"):
-    c_sen = st.columns(len(hot_list))
+with st.expander("🚨 ALERTAS CRÍTICAS SENTINEL"):
+    c_sen = st.columns(2)
     for idx, (t, n, i, s) in enumerate(hot_list):
         with c_sen[idx]:
             st.markdown('<div class="sentinel-btn">', unsafe_allow_html=True)
-            if st.button(f"EJECUTAR {s}: {n}", key=f"sen_{n}"):
-                st.warning(f"ORDEN SENTINEL LANZADA: {s} EN {n}")
+            if st.button(f"EJECUTAR {s}: {n} {i}", key=f"sen_{n}"):
+                st.warning(f"ORDEN SENTINEL LANZADA: {n}")
             st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 4: NAVEGACIÓN (VENTANAS) - FIJADO MARRÓN/BLANCO
+# BLOQUE 4: NAVEGACIÓN (VENTANAS)
 # =========================================================
 nav_cols = st.columns(6)
 btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
@@ -132,10 +158,10 @@ for i, col in enumerate(nav_cols):
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 5: VENTANA LOBO (CASCADA PEGADA - FIJADO BLANCO/NEGRO)
+# BLOQUE 5: VENTANA LOBO (CASCADA FIJADA)
 # =========================================================
 if st.session_state.view == "Lobo":
-    # 5.1 - CATEGORÍAS (Stocks, Indices, Material, Divisas)
+    # 5.1 - CATEGORÍAS (Stocks, Indices, Materiales, Divisas)
     cats = list(DATABASE.keys())
     c_cat = st.columns(len(cats))
     for i, cat in enumerate(cats):
@@ -145,10 +171,10 @@ if st.session_state.view == "Lobo":
             st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
             if st.button(cat.upper(), key=f"c_{cat}", use_container_width=True):
                 st.session_state.active_cat = cat
-                st.session_state.active_sub = None # Limpiar sub al cambiar cat
+                st.session_state.active_sub = None 
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 5.2 - SUBCATEGORÍAS (Solo aparecen si hay categoría)
+    # 5.2 - SUBCATEGORÍAS
     if st.session_state.active_cat:
         sub_dict = DATABASE[st.session_state.active_cat]
         sub_list = list(sub_dict.keys())
@@ -162,10 +188,11 @@ if st.session_state.view == "Lobo":
                     st.session_state.active_sub = sub
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # 5.3 - ACTIVOS (10 por subcategoría en rejilla pegada)
+        # 5.3 - ACTIVOS (Nombres XTB + Logos)
         if st.session_state.active_sub:
             items = sub_dict[st.session_state.active_sub]
-            # Usamos 5 columnas para que los 10 activos queden en 2 filas exactas
+            # Grid dinámico: si hay más de 5, crea filas de 5
+            num_items = len(items)
             cols_act = st.columns(5)
             for idx, (name, data) in enumerate(items.items()):
                 is_active = st.session_state.ticker_name == name
@@ -178,7 +205,7 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MONITOR FINAL
+# BLOQUE FINAL: MONITOR
 # =========================================================
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.subheader(f"📊 MONITOR: {st.session_state.ticker_name}")
