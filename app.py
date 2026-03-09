@@ -10,9 +10,6 @@ from streamlit_autorefresh import st_autorefresh
 # =========================================================
 # 2. CONFIGURACIÓN Y CEREBRO (Bloque 0)
 # =========================================================
-st.set_page_config(page_title="Sentinel Radar", layout="wide")
-st_autorefresh(interval=15000, limit=None, key="sentinel_refresh")
-
 if 'active_trades' not in st.session_state:
     st.session_state.active_trades = []
 
