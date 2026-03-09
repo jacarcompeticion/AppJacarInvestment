@@ -572,58 +572,63 @@ def render_sentinel_news(ticker):
         else:
             sl, tp = price, price
 
-        # --- TÍTULO CON ESTÉTICA XTB ---
+       # --- TÍTULO CON ESTÉTICA XTB ---
         header_label = f"┃ {tipo_orden} ┃ {nombre_xtb} ➟ {title[:55]}..."
         
         with st.expander(header_label):
-            # Banner de Riesgo
+            # 1. Aviso de Riesgo (si aplica)
             if riesgo_alto:
-                st.warning("⚠️ **AVISO DE RIESGO ALTO:** Alta volatilidad detectada en esta noticia.")
+                st.warning("⚠️ **AVISO DE RIESGO ALTO:** Alta volatilidad detectada.")
 
-            # Contenedor Principal (Fondo Claro / Texto Negro)
-            st.markdown(f"""
-            <div style="background-color: #ffffff; padding: 20px; border: 1px solid #e0e0e0; border-left: 8px solid {color_xtb}; border-radius: 4px; color: #000000;">
+            # 2. Formateo de decimales según el activo (5 para divisas, 2 para el resto)
+            precision = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
+            
+            # 3. CONSTRUCCIÓN DEL HTML (Asegúrate de que este bloque esté así)
+            html_card = f"""
+            <div style="background-color: white; padding: 20px; border: 1px solid #e0e0e0; border-left: 8px solid {color_xtb}; border-radius: 4px; font-family: sans-serif;">
                 <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 15px;">
-                    <span style="font-weight: 800; font-size: 1.1rem; letter-spacing: 1px;">{nombre_xtb}</span>
+                    <span style="font-weight: 800; color: #000; font-size: 1.1rem;">{nombre_xtb}</span>
                     <span style="color: {color_xtb}; font-weight: 900; font-size: 1.1rem;">{tipo_orden} MARKET</span>
                 </div>
                 
                 <p style="font-size: 0.95rem; color: #333; margin-bottom: 20px;">
-                    <strong>CONTEXTO:</strong> {summary[:280]}...
+                    <strong style="color: #000;">CONTEXTO:</strong> {summary[:250]}...
                 </p>
                 
                 <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #eee;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; text-align: center;">
+                    <div style="display: flex; justify-content: space-around; text-align: center;">
                         <div>
-                            <div style="color: #888; font-size: 0.7rem; font-weight: bold; margin-bottom: 5px;">VOLUMEN</div>
-                            <div style="font-size: 1.1rem; font-weight: 700;">0.10 Lotes</div>
+                            <div style="color: #888; font-size: 0.7rem; font-weight: bold;">VOLUMEN</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: #000;">0.10 Lotes</div>
                         </div>
                         <div>
-                            <div style="color: #888; font-size: 0.7rem; font-weight: bold; margin-bottom: 5px;">STOP LOSS</div>
-                            <div style="font-size: 1.1rem; font-weight: 700; color: #ff3131;">{sl:,.2f}</div>
+                            <div style="color: #888; font-size: 0.7rem; font-weight: bold;">STOP LOSS</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: #ff3131;">{sl:,.{precision}f}</div>
                         </div>
                         <div>
-                            <div style="color: #888; font-size: 0.7rem; font-weight: bold; margin-bottom: 5px;">TAKE PROFIT</div>
-                            <div style="font-size: 1.1rem; font-weight: 700; color: #008d28;">{tp:,.2f}</div>
+                            <div style="color: #888; font-size: 0.7rem; font-weight: bold;">TAKE PROFIT</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: #008d28;">{tp:,.{precision}f}</div>
                         </div>
                     </div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """
             
-            # Espaciado y Botón de Acción
+            # Renderizado forzado
+            st.markdown(html_card, unsafe_allow_html=True)
+            
+            # 4. Botón de Acción (fuera del bloque HTML para que funcione)
             st.write("")
-            if st.button(f"🚀 EJECUTAR TICKET: {title[:20]}...", key=f"btn_xtb_{i}"):
+            if st.button(f"🚀 ENVIAR TICKET AL MÓVIL", key=f"btn_xtb_{i}"):
                 msg = (f"🏦 *XTB TERMINAL: {nombre_xtb}*\n"
                        f"━━━━━━━━━━━━━━━\n"
-                       f"💎 *ACCION:* {tipo_orden}\n"
-                       f"📊 *PRECIO REF:* {price:,.2f}\n"
-                       f"🛑 *STOP LOSS:* {sl:,.2f}\n"
-                       f"🎯 *TAKE PROFIT:* {tp:,.2f}\n"
-                       f"━━━━━━━━━━━━━━━\n"
-                       f"⚠️ Riesgo: {'ALTO' if riesgo_alto else 'NORMAL'}")
+                       f"💎 *ORDEN:* {tipo_orden}\n"
+                       f"📊 *ENTRADA:* {price:,.{precision}f}\n"
+                       f"🛑 *SL:* {sl:,.{precision}f}\n"
+                       f"🎯 *TP:* {tp:,.{precision}f}\n"
+                       f"━━━━━━━━━━━━━━━")
                 send_telegram_alert(msg)
-                st.toast("Señal enviada a XTB Mobile")
+                st.toast("Señal enviada con éxito")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
