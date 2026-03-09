@@ -317,9 +317,30 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 # FIN DE INTEGRACIÓN B6 + B7
 # =========================================================
+# =========================================================
+# LÓGICA DE EJECUCIÓN (CONECTANDO B6 Y B7)
+# =========================================================
 
-df_actual = get_market_data(ticker_elegido)
-render_shielded_chart(df_actual, ticker_elegido)
+# 1. Creamos el selector de activos (Tickers estilo Investing/XTB)
+st.sidebar.header("🔍 Configuración de Mercado")
+ticker_elegido = st.sidebar.selectbox(
+    "Selecciona Activo:",
+    ["NQ=F", "ES=F", "GC=F", "CL=F", "EURUSD=X", "GBPUSD=X", "BTC-USD"],
+    index=0,
+    help="NQ=Nasdaq, ES=S&P500, GC=Oro, CL=Petróleo, EURUSD=Euro/Dólar"
+)
+
+# 2. Selector de temporalidad
+intervalo = st.sidebar.selectbox("Temporalidad:", ["1m", "5m", "15m", "1h", "1d"], index=3)
+
+# 3. EJECUCIÓN DEL MOTOR (Bloque 6)
+df_actual = get_market_data(ticker_elegido, interval=intervalo)
+
+# 4. RENDERIZADO DEL RADAR (Bloque 7)
+if df_actual is not None:
+    render_shielded_chart(df_actual, ticker_elegido)
+else:
+    st.error("No se pudo establecer conexión con el servidor de datos.")
 # =========================================================
 # BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
 # =========================================================
