@@ -571,7 +571,50 @@ i_final = st.session_state.get('int_top', '1h')
 
 # 2. CASO A: SI ESTAMOS EN LA PESTAÑA DE NOTICIAS
 if st.session_state.view == "Noticias":
-    render_sentinel_news(t_final)
+   for news in news_list[:5]:
+        title = news.get('title', 'Sin título').replace('"', "'")
+        publisher = news.get('publisher', 'Fuente desconocida')
+        link = news.get('link', '#')
+        
+        # --- CORRECCIÓN DEL ERROR pub_time ---
+        raw_time = news.get('providerPublishTime')
+        if raw_time:
+            pub_time = pd.to_datetime(raw_time, unit='s')
+            time_str = pub_time.strftime('%H:%M')
+        else:
+            time_str = "--:--" # Si no hay hora, evitamos que la app explote
+        # -------------------------------------
+        
+        impacto = "NEUTRAL"
+        color_impacto = "#888888"
+        accion = "MANTENER VIGILANCIA"
+        
+        t_low = title.lower()
+        if any(w in t_low for w in ["bullish", "growth", "surge", "buy", "up", "profit"]):
+            impacto = "ALTO (POSITIVO)"
+            color_impacto = "#00ff41"
+            accion = "BUSCAR COMPRA"
+        elif any(w in t_low for w in ["bearish", "crash", "drop", "warns", "sell", "down"]):
+            impacto = "ALTO (CRÍTICO)"
+            color_impacto = "#ff3131"
+            accion = "BUSCAR VENTA"
+
+        with st.container():
+            st.markdown(f"""
+            <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
+                <div style="display: flex; justify-content: space-between;">
+                    <small style="color: #666;">{publisher}</small>
+                    <small style="color: #666;">{time_str}h</small>
+                </div>
+                <h4 style="margin: 10px 0;">
+                    <a href="{link}" target="_blank" style="color: #ffffff; text-decoration: none;">{title}</a>
+                </h4>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: {color_impacto}; font-weight: bold; font-size: 0.8rem;">{impacto}</span>
+                    <span style="background-color: {color_impacto}; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">{accion}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # 3. CASO B: SI ESTAMOS EN PESTAÑAS QUE REQUIEREN GRÁFICOS (Lobo / Predicciones)
 elif st.session_state.view in ["Lobo", "Predicciones"]:
