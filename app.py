@@ -522,69 +522,7 @@ import feedparser
 
 import streamlit.components.v1 as components
 
-def render_sentinel_news(ticker):
-    st.title(f"📊 XTB TRADING TERMINAL: {ticker}")
-    
-    # 1. Configuración de Activo
-    xtb_names = {"NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD", "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD"}
-    nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0].upper())
-    
-    # 2. Datos de Mercado
-    price = st.session_state.get('last_price', 0.0)
-    atr = price * 0.005  # Volatilidad del 0.5% para el cálculo
-    
-    # 3. Obtención de Noticias
-    feeds = ["https://es.investing.com/rss/news.rss"]
-    all_entries = []
-    for url in feeds:
-        try:
-            f = feedparser.parse(url)
-            all_entries.extend(f.entries[:5])
-        except: continue
 
-    for i, entry in enumerate(all_entries):
-        t_low = entry.title.lower()
-        
-        # --- LÓGICA DE TRADING ---
-        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "buy", "comprar"]):
-            tipo, color, sl, tp = "COMPRA", "#008d28", price - (atr * 2), price + (atr * 4)
-        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell", "vender"]):
-            tipo, color, sl, tp = "VENTA", "#ff3131", price + (atr * 2), price - (atr * 4)
-        else:
-            tipo, color, sl, tp = "OBSERVAR", "#333333", price, price
-
-        prec = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
-
-        # --- TÍTULO DEL DESPLEGABLE ---
-        # Forzamos fondo claro en el label mediante emojis (limitación de Streamlit)
-        header = f"【 {tipo} 】 {nombre_xtb} ➟ {entry.title[:50]}..."
-        
-        with st.expander(header):
-            # 4. RENDERIZADO HTML PROFESIONAL (Fondo Blanco / Letra Negra)
-            html_content = f"""
-            <div style="background-color: white; color: black; padding: 15px; border: 1px solid #ddd; border-left: 10px solid {color}; border-radius: 5px; font-family: Arial, sans-serif;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
-                    <b style="font-size: 1.1em;">{nombre_xtb}</b>
-                    <b style="color: {color};">{tipo} MARKET</b>
-                </div>
-                <p style="font-size: 0.9em; margin-bottom: 15px;"><strong>CONTEXTO:</strong> {entry.get('summary', 'Análisis técnico en proceso...')[:200]}...</p>
-                <div style="background: #f4f4f4; display: flex; justify-content: space-around; padding: 10px; border-radius: 4px; text-align: center;">
-                    <div><small>LOTES</small><br><b>0.10</b></div>
-                    <div><small>STOP LOSS</small><br><b style="color: #ff3131;">{sl:,.{prec}f}</b></div>
-                    <div><small>TAKE PROFIT</small><br><b style="color: #008d28;">{tp:,.{prec}f}</b></div>
-                </div>
-            </div>
-            """
-            # Usamos st.components para evitar que se vea el código
-            components.html(html_content, height=200)
-            
-            # 5. BOTÓN DE TELEGRAM (Fuera del HTML para que Streamlit lo detecte)
-            if st.button(f"📲 ENVIAR SEÑAL: {i}", use_container_width=True):
-                msg = (f"🏦 *TERMINAL XTB: {nombre_xtb}*\n"
-                       f"ORDEN: {tipo}\n"
-                       f"SL: {sl:,.{prec}f} | TP: {tp:,.{prec}f}")
-                send_telegram_alert(msg)
-                st.success("Señal enviada")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
