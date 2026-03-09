@@ -537,66 +537,61 @@ def render_sentinel_news(ticker):
         return
 
     # 2. PROCESAMIENTO DE SEÑALES
+    price = st.session_state.get('last_price', 0.0)
+    
     for i, entry in enumerate(all_entries):
         title = entry.title
         summary = entry.get('summary', 'Sin detalles adicionales.')
         
-        # Lógica de Decisión (Sentimiento)
+        # --- VALORES DE SEGURIDAD (Evitan el UnboundLocalError) ---
         tipo_orden = "OBSERVAR"
         color_card = "#888888"
+        sl = price  # Valor por defecto si no hay señal
+        tp = price  # Valor por defecto si no hay señal
+        # ---------------------------------------------------------
+        
         t_low = title.lower()
         
-        # Parámetros de la Señal (Simulados basados en el precio actual)
-        price = st.session_state.get('last_price', 0.0)
-        
-        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "récord"]):
+        # Lógica de Decisión (Sentimiento)
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "récord", "ganancia"]):
             tipo_orden = "COMPRAR"
             color_card = "#00ff41"
-            sl = price * 0.995 # SL al 0.5%
-            tp = price * 1.015 # TP al 1.5%
-        elif any(w in t_low for w in ["cae", "baja", "inflación", "riesgo", "caída"]):
+            sl = price * 0.995 if price > 0 else 0
+            tp = price * 1.015 if price > 0 else 0
+        elif any(w in t_low for w in ["cae", "baja", "inflación", "riesgo", "caída", "pérdida"]):
             tipo_orden = "VENDER"
             color_card = "#ff3131"
-            sl = price * 1.005
-            tp = price * 0.985
+            sl = price * 1.005 if price > 0 else 0
+            tp = price * 0.985 if price > 0 else 0
         
         # --- DISEÑO DE TARJETA DESPLEGABLE ---
         with st.expander(f"{tipo_orden} {ticker} | {title[:60]}..."):
             st.markdown(f"""
             <div style="border-left: 5px solid {color_card}; padding-left: 15px; margin-bottom: 20px;">
-                <p style="color: #8b949e; font-size: 0.9rem;">{summary}</p>
+                <p style="color: #8b949e; font-size: 0.9rem;">{summary[:250]}...</p>
                 <hr style="border-color: #333;">
                 <h4 style="color: {color_card};">ACCIONES A TOMAR:</h4>
-                <p><strong>Estrategia:</strong> {tipo_orden} si el precio confirma tendencia en {time_str if 'time_str' in locals() else 'M15'}</p>
-                <table style="width: 100%; color: white; background: #161b22; border-radius: 5px;">
+                <p><strong>Estrategia:</strong> {tipo_orden} si el precio confirma estructura en temporalidades menores.</p>
+                <table style="width: 100%; color: white; background: #161b22; border-radius: 5px; border-collapse: collapse;">
                     <tr>
-                        <td style="padding: 10px;"><b>VOLUMEN:</b> 0.10 Lotes</td>
-                        <td style="padding: 10px;"><b>STOP LOSS:</b> {sl:,.2f}</td>
-                        <td style="padding: 10px;"><b>TAKE PROFIT:</b> {tp:,.2f}</td>
+                        <td style="padding: 10px; border: 1px solid #333;"><b>VOLUMEN:</b> 0.10 Lotes</td>
+                        <td style="padding: 10px; border: 1px solid #333;"><b>STOP LOSS:</b> {sl:,.2f}</td>
+                        <td style="padding: 10px; border: 1px solid #333;"><b>TAKE PROFIT:</b> {tp:,.2f}</td>
                     </tr>
                 </table>
             </div>
             """, unsafe_allow_html=True)
             
-            # Botón para disparar la alerta manualmente o confirmar
-            if st.button(f"Enviar Señal a Telegram", key=f"btn_{i}"):
+            # Botón manual
+            if st.button(f"Enviar Señal a Telegram", key=f"btn_manual_{i}"):
                 msg = (f"🚀 *NUEVA SEÑAL SENTINEL*\n\n"
                        f"Activo: {ticker}\n"
                        f"Orden: {tipo_orden}\n"
-                       f"Volumen: 0.10\n"
                        f"SL: {sl:,.2f}\n"
                        f"TP: {tp:,.2f}\n"
-                       f"Basado en: {title}")
+                       f"Fuente: {title}")
                 send_telegram_alert(msg)
-                st.success("Alerta enviada al terminal móvil.")
-
-        # ALERTA AUTOMÁTICA (Solo si es Crítica y no se ha enviado)
-        if tipo_orden != "OBSERVAR":
-            alert_id = f"auto_{entry.get('id', title)}"
-            if alert_id not in st.session_state:
-                msg_auto = f"🚨 *ALERTA AUTOMÁTICA*\n{ticker}: {tipo_orden}\nSL: {sl:,.2f} | TP: {tp:,.2f}"
-                send_telegram_alert(msg_auto)
-                st.session_state[alert_id] = True
+                st.toast("Señal enviada!")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
