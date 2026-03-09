@@ -520,99 +520,71 @@ def send_telegram_alert(message):
 
 import feedparser
 
+import streamlit.components.v1 as components
+
 def render_sentinel_news(ticker):
-    st.markdown(f"### 📡 XTB COMMAND CENTER: {ticker}")
+    st.title(f"📊 XTB TRADING TERMINAL: {ticker}")
     
-    # 1. Mapeo de Activos
+    # 1. Configuración de Activo
     xtb_names = {"NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD", "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD"}
     nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0].upper())
     
-    # 2. Obtención de Noticias
-    feeds = ["https://es.investing.com/rss/news.rss", "https://es.investing.com/rss/market_overview.rss"]
+    # 2. Datos de Mercado
+    price = st.session_state.get('last_price', 0.0)
+    atr = price * 0.005  # Volatilidad del 0.5% para el cálculo
+    
+    # 3. Obtención de Noticias
+    feeds = ["https://es.investing.com/rss/news.rss"]
     all_entries = []
     for url in feeds:
         try:
             f = feedparser.parse(url)
-            all_entries.extend(f.entries[:6])
+            all_entries.extend(f.entries[:5])
         except: continue
 
-    price = st.session_state.get('last_price', 0.0)
-    atr_simulado = price * 0.008 
-
     for i, entry in enumerate(all_entries):
-        title = entry.title
-        summary = entry.get('summary', 'Análisis en proceso...')
+        t_low = entry.title.lower()
         
-        # --- Lógica de Señal ---
-        tipo_orden = "OBSERVAR"
-        color_xtb = "#333333" 
-        t_low = title.lower()
-        
-        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "ganancia", "buy"]):
-            tipo_orden = "COMPRA"
-            color_xtb = "#008d28"
-            sl = price - (atr_simulado * 1.5)
-            tp = price + (atr_simulado * 3.0)
-        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell"]):
-            tipo_orden = "VENTA"
-            color_xtb = "#ff3131"
-            sl = price + (atr_simulado * 1.5)
-            tp = price - (atr_simulado * 3.0)
+        # --- LÓGICA DE TRADING ---
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "buy", "comprar"]):
+            tipo, color, sl, tp = "COMPRA", "#008d28", price - (atr * 2), price + (atr * 4)
+        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell", "vender"]):
+            tipo, color, sl, tp = "VENTA", "#ff3131", price + (atr * 2), price - (atr * 4)
         else:
-            sl, tp = price, price
+            tipo, color, sl, tp = "OBSERVAR", "#333333", price, price
 
-        # --- ESTILO XTB PARA EL DESPLEGABLE (FONDO CLARO) ---
-        # Usamos un emoji y espacios para dar peso visual al título
-        header_label = f"⬜ {tipo_orden} | {nombre_xtb} » {title[:55]}..."
+        prec = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
+
+        # --- TÍTULO DEL DESPLEGABLE ---
+        # Forzamos fondo claro en el label mediante emojis (limitación de Streamlit)
+        header = f"【 {tipo} 】 {nombre_xtb} ➟ {entry.title[:50]}..."
         
-        with st.expander(header_label):
-            # Formateo de precisión
-            prec = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
-            
-            # BLOQUE HTML ÚNICO Y SEGURO
-            # El secreto es usar st.write con el HTML y el flag al final
-            st.markdown(f"""
-            <div style="background-color: #ffffff; padding: 20px; border: 1px solid #dddddd; border-left: 10px solid {color_xtb}; border-radius: 8px; font-family: 'Arial', sans-serif;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 15px;">
-                    <span style="font-weight: bold; color: #1a1a1a; font-size: 1.1rem;">{nombre_xtb}</span>
-                    <span style="color: {color_xtb}; font-weight: 900; font-size: 1.1rem; letter-spacing: 1px;">{tipo_orden}</span>
+        with st.expander(header):
+            # 4. RENDERIZADO HTML PROFESIONAL (Fondo Blanco / Letra Negra)
+            html_content = f"""
+            <div style="background-color: white; color: black; padding: 15px; border: 1px solid #ddd; border-left: 10px solid {color}; border-radius: 5px; font-family: Arial, sans-serif;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                    <b style="font-size: 1.1em;">{nombre_xtb}</b>
+                    <b style="color: {color};">{tipo} MARKET</b>
                 </div>
-                
-                <p style="font-size: 0.95rem; color: #333333; line-height: 1.5; margin-bottom: 20px;">
-                    <strong>ANÁLISIS DE MERCADO:</strong> {summary[:250]}...
-                </p>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #eeeeee;">
-                    <div style="display: flex; justify-content: space-around; text-align: center;">
-                        <div>
-                            <div style="color: #999; font-size: 0.7rem; font-weight: bold;">LOTES</div>
-                            <div style="font-size: 1.1rem; font-weight: bold; color: #000;">0.10</div>
-                        </div>
-                        <div>
-                            <div style="color: #999; font-size: 0.7rem; font-weight: bold;">STOP LOSS</div>
-                            <div style="font-size: 1.1rem; font-weight: bold; color: #ff3131;">{sl:,.{prec}f}</div>
-                        </div>
-                        <div>
-                            <div style="color: #999; font-size: 0.7rem; font-weight: bold;">TAKE PROFIT</div>
-                            <div style="font-size: 1.1rem; font-weight: bold; color: #008d28;">{tp:,.{prec}f}</div>
-                        </div>
-                    </div>
+                <p style="font-size: 0.9em; margin-bottom: 15px;"><strong>CONTEXTO:</strong> {entry.get('summary', 'Análisis técnico en proceso...')[:200]}...</p>
+                <div style="background: #f4f4f4; display: flex; justify-content: space-around; padding: 10px; border-radius: 4px; text-align: center;">
+                    <div><small>LOTES</small><br><b>0.10</b></div>
+                    <div><small>STOP LOSS</small><br><b style="color: #ff3131;">{sl:,.{prec}f}</b></div>
+                    <div><small>TAKE PROFIT</small><br><b style="color: #008d28;">{tp:,.{prec}f}</b></div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """
+            # Usamos st.components para evitar que se vea el código
+            components.html(html_content, height=200)
             
-            # Botón fuera del HTML para evitar errores de renderizado
-            st.write("")
-            if st.button(f"📲 ENVIAR SEÑAL A TELEGRAM", key=f"xtb_v3_{i}"):
-                msg = (f"🏦 *XTB TERMINAL: {nombre_xtb}*\n"
-                       f"━━━━━━━━━━━━━━━\n"
-                       f"📍 *ORDEN:* {tipo_orden}\n"
-                       f"📊 *VOL:* 0.10 | *ENTRADA:* {price:,.{prec}f}\n"
-                       f"🛑 *SL:* {sl:,.{prec}f}\n"
-                       f"🎯 *TP:* {tp:,.{prec}f}\n"
-                       f"━━━━━━━━━━━━━━━")
+            # 5. BOTÓN DE TELEGRAM (Fuera del HTML para que Streamlit lo detecte)
+            if st.button(f"📲 ENVIAR SEÑAL: {i}", use_container_width=True):
+                msg = (f"🏦 *TERMINAL XTB: {nombre_xtb}*\n"
+                       f"ORDEN: {tipo}\n"
+                       f"SL: {sl:,.{prec}f} | TP: {tp:,.{prec}f}")
                 send_telegram_alert(msg)
-                st.toast("Enviado al terminal móvil")
+                st.success("Señal enviada")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
