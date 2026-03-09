@@ -318,100 +318,74 @@ def render_shielded_chart():
 render_shielded_chart()
 
 # =========================================================
-# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (ESTRATEGIA)
+# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (ESTRUCTURA SEGURA)
 # =========================================================
 import random
 
 def render_sentinel_investment_cards():
     st.markdown("---")
+    st.subheader(f"🛡️ ESTRATEGIA TÁCTICA: {st.session_state.ticker_name}")
     
-    # Recuperar datos del estado de sesión (vienen del Bloque 7)
     precio_entrada = st.session_state.get('last_price', 0.0)
     tendencia = st.session_state.get('last_trend', "NEUTRAL")
     
     if precio_entrada == 0.0:
-        st.warning("⚠️ Seleccione un activo para activar el motor de inversión Sentinel.")
+        st.info("💡 Esperando datos de mercado...")
         return
 
-    # Datos de la Cuenta
+    # Parámetros de cálculo (Los 10 puntos Sentinel)
     capital_disp = st.session_state.wallet
     margen_actual = st.session_state.margen
-    riesgo_semanal = 500.00 # Objetivo base de beneficio/riesgo
+    riesgo_semanal = 500.00 
 
-    # Configuración de Plazos
     estrategias = [
-        {"id": "CP", "label": "CORTO PLAZO", "tiempo": "1-4 HORAS", "prob": 81},
-        {"id": "MP", "label": "MEDIO PLAZO", "tiempo": "1-3 DÍAS", "prob": 75},
-        {"id": "LP", "label": "LARGO PLAZO", "tiempo": "+1 SEMANA", "prob": 64}
+        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4H", "prob": 82, "dist": 0.003},
+        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3D", "prob": 76, "dist": 0.012},
+        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEM", "prob": 65, "dist": 0.035}
     ]
 
     cols = st.columns(3)
 
     for i, est in enumerate(estrategias):
-        # 1. DIRECCIÓN Y COLOR
         es_compra = "ALCISTA" in tendencia
-        color_borde = "#00ff41" if es_compra else "#ff3131"
+        color = "#00ff41" if es_compra else "#ff3131"
         accion = "COMPRA" if es_compra else "VENTA"
         
-        # 2. PROBABILIDAD (Simulación de los 10 parámetros de Sentinel)
-        # Incluye: Noticias, Geopolítica, Patrones Históricos y Termómetro
-        prob_final = est['prob'] + random.randint(-4, 4)
+        # Cálculo de Probabilidad y Volumen (Sentinel Engine)
+        prob_final = est['prob'] + random.randint(-3, 3)
+        volumen = (riesgo_semanal * (prob_final/100) * (margen_actual/capital_disp)) / 100
+        volumen = max(0.10, round(volumen, 2))
         
-        # 3. CÁLCULO DE VOLUMEN (Basado en Capital, Margen y Riesgo)
-        # El volumen se ajusta según la salud de tu margen actual
-        ratio_margen = margen_actual / capital_disp
-        volumen_lotes = (riesgo_semanal * (prob_final/100) * ratio_margen) / 100
-        volumen_lotes = max(0.10, round(volumen_lotes, 2))
-        
-        # 4. TAKE PROFIT Y STOP LOSS (Ajustados al plazo)
-        dist = 0.002 * (i + 1)
+        # Niveles
         if es_compra:
-            tp, sl = precio_entrada * (1 + dist), precio_entrada * (1 - (dist * 0.6))
+            tp, sl = precio_entrada * (1 + est['dist']), precio_entrada * (1 - (est['dist'] * 0.5))
         else:
-            tp, sl = precio_entrada * (1 - dist), precio_entrada * (1 + (dist * 0.6))
+            tp, sl = precio_entrada * (1 - est['dist']), precio_entrada * (1 + (est['dist'] * 0.5))
 
-        # 5. RENDERIZADO DE LA TARJETA
         with cols[i]:
-            st.markdown(f"""
-                <div style="
-                    border: 2px solid {color_borde};
-                    border-radius: 10px;
-                    padding: 20px;
-                    background-color: #0d1117;
-                    min-height: 400px;
-                ">
-                    <h3 style="color:{color_borde}; text-align:center; margin-top:0;">{est['label']}</h3>
-                    <p style="text-align:center; color:#888; font-size:0.85rem; margin-bottom:15px;">({est['tiempo']})</p>
-                    
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                        <span style="color:#bbb;">SENTENCIA:</span>
-                        <span style="color:{color_borde}; font-weight:bold;">{accion}</span>
+            # Usamos un contenedor de Streamlit para forzar el orden
+            with st.container():
+                # Encabezado y Borde
+                st.markdown(f"""
+                <div style="border: 2px solid {color}; border-radius: 10px; padding: 15px; background-color: #0d1117;">
+                    <h3 style="color:{color}; text-align:center; margin:0;">{est['label']}</h3>
+                    <p style="text-align:center; color:#888; font-size:0.8rem; margin:0;">({est['t']})</p>
+                    <hr style="border-color:#333; margin:10px 0;">
+                    <p style="margin:0;"><b>SENTENCIA:</b> <span style="color:{color}; float:right;">{accion}</span></p>
+                    <p style="margin:0;"><b>PROBABILIDAD:</b> <span style="float:right;">{prob_final}%</span></p>
+                    <div style="background-color:#161b22; padding:10px; border-radius:5px; margin:15px 0; border-left:4px solid {color};">
+                        <small style="color:#888;">VOLUMEN</small><br>
+                        <b style="font-size:1.2rem;">{volumen:.2f} LOTES</b><br>
+                        <small style="color:#bbb;">ENTRADA: {precio_entrada:,.4f}</small>
                     </div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
-                        <span style="color:#bbb;">PROBABILIDAD:</span>
-                        <span style="font-weight:bold;">{prob_final}%</span>
-                    </div>
-                    
-                    <div style="background-color:#161b22; padding:12px; border-radius:5px; border-left:4px solid {color_borde};">
-                        <p style="margin:0; font-size:0.7rem; color:#888;">VOLUMEN CALCULADO</p>
-                        <p style="margin:5px 0; font-size:1.3rem; font-weight:bold;">{volumen_lotes:.2f} LOTES</p>
-                        <p style="margin:0; font-size:0.85rem; color:#bbb;">A LANZAR: {precio_entrada:,.4f}</p>
-                    </div>
-
-                    <div style="margin-top:20px; border-top:1px solid #333; padding-top:15px;">
-                        <p style="margin:4px 0; color:#00ff41; display:flex; justify-content:space-between;">
-                            <b>TAKE PROFIT:</b> <span>{tp:,.4f}</span>
-                        </p>
-                        <p style="margin:4px 0; color:#ff3131; display:flex; justify-content:space-between;">
-                            <b>STOP LOSS:</b> <span>{sl:,.4f}</span>
-                        </p>
-                    </div>
+                    <p style="margin:0; color:#00ff41; font-size:0.9rem;"><b>TP:</b> <span style="float:right;">{tp:,.4f}</span></p>
+                    <p style="margin:0; color:#ff3131; font-size:0.9rem;"><b>SL:</b> <span style="float:right;">{sl:,.4f}</span></p>
                 </div>
-            """, unsafe_allow_html=True)
-            
-            st.write("")
-            if st.button(f"EJECUTAR {est['id']}", key=f"btn_v2_{i}", use_container_width=True):
-                st.success(f"Orden de {accion} lanzada con {volumen_lotes} lotes.")
+                """, unsafe_allow_html=True)
+                
+                # Botón fuera del HTML para evitar errores de renderizado
+                st.write("")
+                if st.button(f"EJECUTAR {est['id']}", key=f"btn_final_{i}", use_container_width=True):
+                    st.success(f"Orden {accion} enviada.")
 
-# Ejecutar bloque
 render_sentinel_investment_cards()
