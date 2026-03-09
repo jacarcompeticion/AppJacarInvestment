@@ -519,27 +519,39 @@ def send_telegram_alert(message):
         pass
 
 def render_sentinel_news(ticker):
-    """Renderiza noticias con análisis de impacto y alertas"""
+    """Renderiza noticias con limpieza de ticker para asegurar resultados"""
     st.markdown("---")
     st.subheader(f"📰 INTELIGENCIA DE MERCADO: {ticker}")
     
-    asset = yf.Ticker(ticker)
-    try:
-        news_list = asset.news
-    except:
-        news_list = []
+    # 1. Limpieza de Ticker para la API de Noticias
+    # Algunos tickers como 'NQ=F' o 'EURUSD=X' fallan en noticias si llevan el sufijo
+    clean_ticker = ticker.split('=')[0] if '=' in ticker else ticker
+    
+    asset = yf.Ticker(clean_ticker)
+    
+    # 2. Intento de descarga con Feedback
+    with st.spinner(f"Escaneando titulares para {clean_ticker}..."):
+        try:
+            news_list = asset.news
+            # Si yfinance devuelve None o vacío, intentamos con el ticker original por si acaso
+            if not news_list:
+                asset_alt = yf.Ticker(ticker)
+                news_list = asset_alt.news
+        except Exception as e:
+            st.error(f"Error al conectar con el servidor de noticias: {e}")
+            news_list = []
     
     if not news_list:
-        st.info("No hay noticias críticas recientes para este activo.")
+        st.warning(f"⚠️ No se han encontrado noticias recientes para '{clean_ticker}'. Prueba con otro activo (ej: TSLA, GOLD o BTC-USD).")
         return
 
-    # Procesamos las 5 noticias más recientes
+    # 3. Renderizado de Noticias
     for news in news_list[:5]:
-        title = news.get('title', 'Sin título').replace('"', "'")
+        title = news.get('title', 'Sin título')
         publisher = news.get('publisher', 'Fuente')
         link = news.get('link', '#')
         
-        # Gestión de tiempo ultra-segura para evitar el AttributeError
+        # Tiempo
         raw_time = news.get('providerPublishTime')
         time_str = "--:--"
         if raw_time:
@@ -549,46 +561,48 @@ def render_sentinel_news(ticker):
             except:
                 time_str = "Reciente"
         
-        # Análisis de sentimiento rápido
+        # Análisis de Impacto
         impacto = "NEUTRAL"
         color_impacto = "#888888"
         accion = "VIGILAR"
         
         t_low = title.lower()
-        if any(w in t_low for w in ["bullish", "growth", "surge", "buy", "profit", "ganancia", "sube"]):
+        # Palabras clave extendidas
+        pos = ["bullish", "growth", "surge", "buy", "profit", "ganancia", "sube", "rebound", "high"]
+        neg = ["bearish", "crash", "drop", "warns", "sell", "caída", "pérdida", "baja", "debt", "low"]
+        
+        if any(w in t_low for w in pos):
             impacto = "ALTO (POSITIVO)"
             color_impacto = "#00ff41"
             accion = "COMPRA"
-        elif any(w in t_low for w in ["bearish", "crash", "drop", "warns", "sell", "caída", "pérdida", "baja"]):
+        elif any(w in t_low for w in neg):
             impacto = "ALTO (CRÍTICO)"
             color_impacto = "#ff3131"
             accion = "VENTA"
 
-        # Interfaz de la noticia
-        with st.container():
-            st.markdown(f"""
-            <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
-                <div style="display: flex; justify-content: space-between;">
-                    <small style="color: #666;">{publisher}</small>
-                    <small style="color: #666;">{time_str}h</small>
-                </div>
-                <h4 style="margin: 10px 0;">
-                    <a href="{link}" target="_blank" style="color: #ffffff; text-decoration: none;">{title}</a>
-                </h4>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="color: {color_impacto}; font-weight: bold; font-size: 0.8rem;">{impacto}</span>
-                    <span style="background-color: {color_impacto}; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">{accion}</span>
-                </div>
+        # Interfaz Visual
+        st.markdown(f"""
+        <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 12px; border: 1px solid #222;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span style="color: #666; font-size: 0.75rem; font-weight: bold;">{publisher.upper()}</span>
+                <span style="color: #666; font-size: 0.75rem;">{time_str}h</span>
             </div>
-            """, unsafe_allow_html=True)
+            <h4 style="margin: 5px 0 15px 0; line-height: 1.4;">
+                <a href="{link}" target="_blank" style="color: #ffffff; text-decoration: none;">{title}</a>
+            </h4>
+            <div style="display: flex; justify-content: space-between; align-items: center; background: #161b22; padding: 8px; border-radius: 4px;">
+                <span style="color: {color_impacto}; font-weight: bold; font-size: 0.75rem;">{impacto}</span>
+                <span style="background-color: {color_impacto}; color: #000; padding: 2px 10px; border-radius: 3px; font-size: 0.7rem; font-weight: 900;">{accion}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Disparador de Telegram (evita duplicados con session_state)
+        # Alerta Telegram
         if impacto != "NEUTRAL":
             alert_id = f"alert_{news.get('uuid', title)}"
             if alert_id not in st.session_state:
                 send_telegram_alert(f"🚨 SENTINEL: {ticker}\n{title}\nImpacto: {impacto}")
                 st.session_state[alert_id] = True
-
 # =========================================================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
