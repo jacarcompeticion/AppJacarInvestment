@@ -206,99 +206,105 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO (V102 - PRECISIÓN DINÁMICA)
+# BLOQUE 7: MOTOR GRÁFICO (V103 - CARGA ULTRA-RÁPIDA)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
+import time
 
-# 1. FUNCIÓN DE DESCARGA (DEBE ESTAR FUERA O ANTES DE RENDER_SHIELDED_CHART)
-@st.cache_data(ttl=60)
+# 1. FUNCIÓN DE DESCARGA OPTIMIZADA
+@st.cache_data(ttl=30, show_spinner=False) # Caché de 30 seg para datos frescos
 def fetch_safe_data(symbol, period, interval):
+    symbol = symbol.strip().upper()
     try:
+        # Intento de descarga primaria
         data = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        
+        # Si falla (vacío), intentamos un fallback con más historial
+        if data.empty:
+            data = yf.download(symbol, period="5d", interval=interval, progress=False, auto_adjust=True)
+            
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
         return data
-    except Exception:
+    except Exception as e:
+        print(f"Error en descarga: {e}")
         return pd.DataFrame()
 
 def render_shielded_chart():
-    # Placeholder para evitar duplicados
     main_chart_placeholder = st.empty()
     
+    # Contenedor de controles
     with st.container():
         c_sel, _ = st.columns([1, 4])
         with c_sel:
             opciones = {
-                "1m (1 hora)": ["1h", "1m"],
-                "5m (6 horas)": ["6h", "5m"],
-                "15m (24 horas)": ["1d", "15m"],
-                "1h (72 horas)": ["3d", "1h"]
+                "1m (1h)": ["1h", "1m"],
+                "5m (6h)": ["6h", "5m"],
+                "15m (1d)": ["1d", "15m"],
+                "1h (3d)": ["3d", "1h"]
             }
-            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key="range_selector_v102")
+            # Key única dinámica para evitar bloqueos de estado
+            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key=f"range_{st.session_state.ticker}")
             periodo, intervalo = opciones[seleccion]
 
-    # Obtención de datos
+    # Ejecución de descarga
     ticker_actual = st.session_state.ticker
     df = fetch_safe_data(ticker_actual, periodo, intervalo)
     
-    if df is None or df.empty or len(df) < 5:
-        st.warning(f"⚠️ Sincronizando flujo de datos para {ticker_actual}...")
+    # Si sigue vacío después del fallback, mostramos un error más claro
+    if df is None or df.empty or len(df) < 2:
+        st.error(f"❌ No hay conexión con el servidor de datos para {ticker_actual}. Reintentando...")
+        time.sleep(1)
+        st.rerun()
         return
 
-    # --- LÓGICA DE PRECISIÓN DE DECIMALES ---
-    # Si el precio es menor a 10 (Forex o centavos), usamos 4 decimales. Si no, usamos 2.
+    # Lógica de Precisión Dinámica
     precio_actual = float(df['Close'].iloc[-1])
+    # Ajuste: 4 decimales para activos < 50 (Divisas/Materias), 2 para el resto (Índices)
     precision = 4 if precio_actual < 50 else 2 
     
-    df = df.dropna(subset=['Close'])
     ema_20 = df['Close'].ewm(span=20, adjust=False).mean()
     tendencia_raw = "ALCISTA" if precio_actual > ema_20.iloc[-1] else "BAJISTA"
     
-    # Guardar en sesión para el Bloque 8
+    # Sincronización con Bloque 8
     st.session_state['last_price'] = precio_actual
     st.session_state['last_trend'] = tendencia_raw
 
-    # --- MÉTRICAS CON PRECISIÓN DINÁMICA ---
+    # Métricas Superiores
     h_max, l_min = float(df['High'].max()), float(df['Low'].min())
     m1, m2, m3, m4 = st.columns(4)
-    
     m1.metric("PRECIO ACTUAL", f"{precio_actual:,.{precision}f}")
     m2.metric("MÁXIMO", f"{h_max:,.{precision}f}")
     m3.metric("MÍNIMO", f"{l_min:,.{precision}f}")
-    
-    t_icon = "🟢" if tendencia_raw == "ALCISTA" else "🔴"
-    m4.metric("TENDENCIA", f"{tendencia_raw} {t_icon}")
+    m4.metric("TENDENCIA", f"{tendencia_raw} {'🟢' if tendencia_raw == 'ALCISTA' else '🔴'}")
 
-    # Gráfico Profesional
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.03, row_width=[0.2, 0.8])
-
+    # Gráfico Profesional (Reducido a 400px para evitar scroll excesivo)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.8])
     time_labels = df.index.strftime('%H:%M')
 
     fig.add_trace(go.Candlestick(
-        x=time_labels, open=df['Open'], high=df['High'], 
-        low=df['Low'], close=df['Close'],
+        x=time_labels, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
         name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    # Línea de Precio Actual
-    fig.add_hline(y=precio_actual, line_dash="dot", line_color="white", 
+    # Línea de Precio Horizontal
+    fig.add_hline(y=precio_actual, line_dash="dot", line_color="white", opacity=0.5,
                   annotation_text=f"ACTUAL: {precio_actual:,.{precision}f}", 
                   annotation_position="bottom right", row=1, col=1)
 
-    fig.update_xaxes(type='category', nticks=10)
+    fig.update_xaxes(type='category', nticks=8)
     fig.update_layout(
-        template="plotly_dark", height=450,
+        template="plotly_dark", height=400,
         plot_bgcolor="#05070a", paper_bgcolor="#05070a",
         xaxis_rangeslider_visible=False,
-        margin=dict(l=0, r=0, t=10, b=0),
-        legend=dict(orientation="h", y=1.05, x=1)
+        margin=dict(l=0, r=0, t=5, b=0),
+        legend=dict(orientation="h", y=1.1, x=1)
     )
 
-    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="chart_v102")
+    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"chart_{ticker_actual}")
 
 render_shielded_chart()
 # =========================================================
