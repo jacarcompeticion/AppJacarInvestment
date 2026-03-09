@@ -504,13 +504,6 @@ def render_sentinel_bridge():
 #========================================
 # BLOQUE 11 : NOTICIAS
 #=======================================
-Este error es muy frustrante porque a veces el código parece estar bien visualmente, pero hay un espacio de más o de menos que Python no perdona. El error te dice que el with no está alineado con nada de lo que hay arriba.
-
-Para solucionar esto de una vez por todas, aquí tienes la función render_sentinel_news con la indentación corregida quirúrgicamente (usando 4 espacios estándar).
-
-Borra tu función actual por completo y pega esta:
-
-Python
 def render_sentinel_news(ticker):
     st.markdown("---")
     st.subheader(f"📰 INTELIGENCIA DE MERCADO: {ticker}")
@@ -543,7 +536,7 @@ def render_sentinel_news(ticker):
             color_impacto = "#ff3131"
             accion = "BUSCAR VENTA"
 
-        # --- AQUÍ ESTABA EL ERROR DE INDENTACIÓN ---
+        # Bloque visual de la noticia
         with st.container():
             st.markdown(f"""
             <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
@@ -565,9 +558,8 @@ def render_sentinel_news(ticker):
         if impacto != "NEUTRAL":
             alert_key = f"alert_{news.get('uuid')}"
             if alert_key not in st.session_state:
-                send_telegram_alert(f"🚨 SENTINEL: {ticker}\n{title}\nImpacto: {impacto}")
+                send_telegram_alert(f"🚨 SENTINEL: {ticker}\\n{title}\\nImpacto: {impacto}")
                 st.session_state[alert_key] = True
-
 # =========================================================
 # ORQUESTADOR FINAL (EL MOTOR QUE ACTIVA EL RADAR)
 # =========================================================
