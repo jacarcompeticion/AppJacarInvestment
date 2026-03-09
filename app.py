@@ -209,13 +209,13 @@ if st.session_state.view == "Lobo":
 # =========================================================
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta  # Asegúrate de tenerlo: pip install pandas_ta
+import pandas_ta as ta
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 def get_market_data(ticker, interval='1h'):
-    # Ajustamos el periodo según el intervalo para el zoom automático
+    # Ajuste dinámico de periodo para el Zoom automático
     period_map = {'1m': '1d', '5m': '1d', '15m': '3d', '1h': '7d', '1d': '60d'}
     period = period_map.get(interval, '7d')
     
@@ -227,10 +227,12 @@ def get_market_data(ticker, interval='1h'):
         df = data.dropna().copy()
         
         # --- CÁLCULO DE INDICADORES ---
-        # EMA de 20 periodos (Tendencia rápida)
         df['EMA_20'] = ta.ema(df['Close'], length=20)
-        # RSI de 14 periodos (Fuerza del mercado)
         df['RSI'] = ta.rsi(df['Close'], length=14)
+        
+        # --- LÓGICA DE COLOR PARA VOLUMEN ---
+        # Si Close > Open = Verde (#00ff41), else Rojo (#ff3131)
+        df['Vol_Color'] = ['#00ff41' if row['Close'] >= row['Open'] else '#ff3131' for _, row in df.iterrows()]
         
         if not df.empty:
             st.session_state.last_price = float(df['Close'].iloc[-1])
@@ -242,78 +244,85 @@ def get_market_data(ticker, interval='1h'):
         return None
 
 # =========================================================
-# BLOQUE 7: RADAR VISUAL (CONTROLES SUPERIORES + INDICADORES)
+# BLOQUE 7: RADAR VISUAL (VOLUMEN BICOLOR & CONTROLES)
 # =========================================================
 def render_shielded_chart(df, ticker_actual):
     if df is None or len(df) == 0:
-        st.warning("📡 Buscando señal...")
+        st.warning("📡 Sincronizando radar...")
         return
 
-    # --- 1. CONTROLES ENCIMA DEL GRÁFICO (Temporalidad) ---
-    c1, c2, _ = st.columns([1, 1, 3])
+    # --- 1. CONTROLES SUPERIORES (Temporalidad integrada) ---
+    c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        nuevo_intervalo = st.selectbox("⏳ Rango:", ["1m", "5m", "15m", "1h", "1d"], index=3, key="int_top")
+        # Nota: Usamos session_state para que el cambio de intervalo sea inmediato
+        st.selectbox("⏳ Rango Temporal:", ["1m", "5m", "15m", "1h", "1d"], index=3, key="int_top")
     with c2:
-        st.write(f"🏷️ **{ticker_actual}**")
-        st.write(f"Price: {st.session_state.last_price:,.2f}")
+        st.metric("Precio Actual", f"{st.session_state.last_price:,.2f}")
+    with c3:
+        st.write(f"🛰️ **RADAR ACTIVO:** {ticker_actual}")
 
-    # --- 2. CONFIGURACIÓN DEL GRÁFICO (3 Filas: Precio, RSI, Volumen) ---
+    # --- 2. CONFIGURACIÓN DEL GRÁFICO (3 Niveles: Precio, RSI, Volumen) ---
     fig = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=True, 
-        vertical_spacing=0.02, 
-        row_width=[0.1, 0.15, 0.75],
-        subplot_titles=("PRECIO & EMA", "RSI", "VOLUMEN")
+        vertical_spacing=0.04, 
+        row_width=[0.15, 0.20, 0.65], # Proporciones de los paneles
+        subplot_titles=("PRECIO & ESTRATEGIA", "ÍNDICE DE FUERZA (RSI)", "FLUJO DE VOLUMEN")
     )
 
-    # A. Velas Japonesas
+    # A. VELAS JAPONESAS
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name='Market', increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+        name='Precio', increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    # B. EMA 20 (Línea Amarilla sobre el precio)
+    # B. EMA 20 (Media móvil rápida en Oro)
     fig.add_trace(go.Scatter(
         x=df.index, y=df['EMA_20'], line=dict(color='#FFD700', width=1.5),
-        name='EMA 20', opacity=0.8
+        name='EMA 20', opacity=0.7
     ), row=1, col=1)
 
     # C. RSI (Panel intermedio)
     fig.add_trace(go.Scatter(
         x=df.index, y=df['RSI'], line=dict(color='#8A2BE2', width=2), name='RSI'
     ), row=2, col=1)
-    # Líneas de sobrecompra/sobreventa
-    fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.3, row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.3, row=2, col=1)
+    # Zonas de Sobrecompra (70) y Sobreventa (30)
+    fig.add_hline(y=70, line_dash="dash", line_color="#ff3131", opacity=0.3, row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="#00ff41", opacity=0.3, row=2, col=1)
 
-    # D. Volumen
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color='#444', name='Vol'), row=3, col=1)
+    # D. VOLUMEN BICOLOR (Verde Compra / Rojo Venta)
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['Volume'], name='Volumen',
+        marker_color=df['Vol_Color'], opacity=0.8
+    ), row=3, col=1)
 
     # --- 3. NIVELES REALES XTB (DESDE B9) ---
     if 'active_trades' in st.session_state:
         for op in st.session_state.active_trades:
             if op['ticker'] == ticker_actual:
-                fig.add_hline(y=float(op['entrada']), line_color="#0066ff", line_dash="dash", row=1, col=1)
-                fig.add_hline(y=float(op['sl']), line_color="#ff3131", line_dash="dot", row=1, col=1)
-                fig.add_hline(y=float(op['tp']), line_color="#00ff41", line_dash="dot", row=1, col=1)
+                # Entrada (Azul)
+                fig.add_hline(y=float(op['entrada']), line_color="#0066ff", line_dash="dash", 
+                              annotation_text="ENTRADA", row=1, col=1)
+                # Stop Loss (Rojo)
+                fig.add_hline(y=float(op['sl']), line_color="#ff3131", line_dash="dot", 
+                              annotation_text="SL", row=1, col=1)
+                # Take Profit (Verde)
+                fig.add_hline(y=float(op['tp']), line_color="#00ff41", line_dash="dot", 
+                              annotation_text="TP", row=1, col=1)
 
-    # --- 4. ZOOM DINÁMICO & ESTÉTICA ---
+    # --- 4. ESTÉTICA & ZOOM ---
     fig.update_layout(
-        template="plotly_dark", height=750, xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=30, b=10), showlegend=False
+        template="plotly_dark", height=800, xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=30, b=10), showlegend=False,
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     fig.update_yaxes(gridcolor='#1e1e1e', zeroline=False)
+    fig.update_xaxes(gridcolor='#1e1e1e')
     
-    st.plotly_chart(fig, use_container_width=True)
-    return nuevo_intervalo
+    st.plotly_chart(fig, use_container_width=True, key=f"radar_elite_{ticker_actual}")
 
-# --- LÓGICA DE EJECUCIÓN ---
-ticker_final = st.session_state.get('ticker', 'NQ=F') # Por defecto Nasdaq
-# El intervalo se controla desde el selector encima del gráfico
-intervalo_actual = st.session_state.get('int_top', '1h')
-
-df_final = get_market_data(ticker_final, interval=intervalo_actual)
-render_shielded_chart(df_final, ticker_final)
+# --- EJECUCIÓN ---
+# Asegúrate de llamar a get_market_data con st.session_state.int_top
 # =========================================================
 # FIN DE INTEGRACIÓN B6 + B7
 # =========================================================
