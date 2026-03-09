@@ -501,48 +501,76 @@ def render_sentinel_bridge():
             st.success(f"Vigilando {ticker_actual}. Riesgo: {riesgo_dinero:,.2f}€")
             st.rerun()
 
-#========================================
-# BLOQUE 11 : NOTICIAS
-#=======================================
+# =========================================================
+# BLOQUE 11: SENTINEL NEWS ENGINE & ALERT SYSTEM
+# =========================================================
+
+def send_telegram_alert(message):
+    """Envía alertas críticas al móvil"""
+    # Asegúrate de que estas variables tengan tus datos reales entre comillas
+    token = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
+    chat_id = "TU_CHAT_ID_AQUÍ" 
+    
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass
+
 def render_sentinel_news(ticker):
+    """Renderiza noticias con análisis de impacto y alertas"""
     st.markdown("---")
     st.subheader(f"📰 INTELIGENCIA DE MERCADO: {ticker}")
     
     asset = yf.Ticker(ticker)
-    news_list = asset.news
+    try:
+        news_list = asset.news
+    except:
+        news_list = []
     
     if not news_list:
         st.info("No hay noticias críticas recientes para este activo.")
         return
 
+    # Procesamos las 5 noticias más recientes
     for news in news_list[:5]:
         title = news.get('title', 'Sin título').replace('"', "'")
-        publisher = news.get('publisher', 'Fuente desconocida')
+        publisher = news.get('publisher', 'Fuente')
         link = news.get('link', '#')
-        pub_time = pd.to_datetime(news.get('providerPublishTime'), unit='s')
         
-        # Lógica de Impacto
+        # Gestión de tiempo ultra-segura para evitar el AttributeError
+        raw_time = news.get('providerPublishTime')
+        time_str = "--:--"
+        if raw_time:
+            try:
+                dt_obj = pd.to_datetime(raw_time, unit='s')
+                time_str = dt_obj.strftime('%H:%M')
+            except:
+                time_str = "Reciente"
+        
+        # Análisis de sentimiento rápido
         impacto = "NEUTRAL"
         color_impacto = "#888888"
-        accion = "MANTENER VIGILANCIA"
+        accion = "VIGILAR"
         
         t_low = title.lower()
-        if any(w in t_low for w in ["bullish", "growth", "surge", "buy", "up", "profit"]):
+        if any(w in t_low for w in ["bullish", "growth", "surge", "buy", "profit", "ganancia", "sube"]):
             impacto = "ALTO (POSITIVO)"
             color_impacto = "#00ff41"
-            accion = "BUSCAR COMPRA"
-        elif any(w in t_low for w in ["bearish", "crash", "drop", "warns", "sell", "down"]):
+            accion = "COMPRA"
+        elif any(w in t_low for w in ["bearish", "crash", "drop", "warns", "sell", "caída", "pérdida", "baja"]):
             impacto = "ALTO (CRÍTICO)"
             color_impacto = "#ff3131"
-            accion = "BUSCAR VENTA"
+            accion = "VENTA"
 
-       # --- BLOQUE VISUAL (Dentro del bucle for) ---
-    with st.container():
+        # Interfaz de la noticia
+        with st.container():
             st.markdown(f"""
             <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
                 <div style="display: flex; justify-content: space-between;">
                     <small style="color: #666;">{publisher}</small>
-                    <small style="color: #666;">{pub_time.strftime('%H:%M')}h</small>
+                    <small style="color: #666;">{time_str}h</small>
                 </div>
                 <h4 style="margin: 10px 0;">
                     <a href="{link}" target="_blank" style="color: #ffffff; text-decoration: none;">{title}</a>
@@ -554,40 +582,37 @@ def render_sentinel_news(ticker):
             </div>
             """, unsafe_allow_html=True)
 
-        # --- ALERTA TELEGRAM (DEBE TENER LA MISMA SANGRÍA QUE 'WITH') ---
-    if impacto != "NEUTRAL":
-            alert_key = f"alert_{news.get('uuid')}"
-            if alert_key not in st.session_state:
-                # Nota: Usamos un solo \n para el mensaje de Telegram
+        # Disparador de Telegram (evita duplicados con session_state)
+        if impacto != "NEUTRAL":
+            alert_id = f"alert_{news.get('uuid', title)}"
+            if alert_id not in st.session_state:
                 send_telegram_alert(f"🚨 SENTINEL: {ticker}\n{title}\nImpacto: {impacto}")
-                st.session_state[alert_key] = True
+                st.session_state[alert_id] = True
+
 # =========================================================
-# ORQUESTADOR FINAL (MOTOR DE VISTAS)
+# ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
 
-# 1. Definimos el activo actual
+# 1. Datos base
 t_final = st.session_state.get('ticker', 'NQ=F')
 i_final = st.session_state.get('int_top', '1h')
 
-# 2. Lógica de Navegación
-if st.session_state.view == "Noticias":
-    # Llamamos a la función que ya tiene el bucle 'for news in news_list' dentro
+# 2. Lógica de Navegación por Pestañas
+if st.session_state.get('view') == "Noticias":
     render_sentinel_news(t_final)
 
-elif st.session_state.view in ["Lobo", "Predicciones"]:
+elif st.session_state.get('view') in ["Lobo", "Predicciones"]:
     df_final = get_market_data(t_final, interval=i_final)
     
     if df_final is not None and not df_final.empty:
-        # Colores de volumen y último precio
+        # Cálculos de última hora
         df_final['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' 
                                  for c, o in zip(df_final['Close'], df_final['Open'])]
         st.session_state.last_price = float(df_final['Close'].iloc[-1])
         
-        # Renderizado de bloques técnicos
+        # Ejecución de bloques visuales
         render_shielded_chart(df_final, t_final)
         render_strategy_cards(df_final)
         render_sentinel_bridge()
     else:
-        st.error("📡 Error de conexión: No se han podido recibir datos de mercado.")
-
-
+        st.error("📡 Error de conexión con Yahoo Finance.")
