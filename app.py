@@ -347,7 +347,7 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 
 # =========================================================
-# BLOQUE 8: ESTRATEGIAS (PROBABILIDAD + ENTRADAS ESCALONADAS)
+# BLOQUE 8: ESTRATEGIAS CON OBJETIVOS REALISTAS
 # =========================================================
 def render_strategy_cards(df):
     st.markdown("---")
@@ -364,53 +364,66 @@ def render_strategy_cards(df):
     # 1. SENTIDO (Compra/Venta)
     es_compra = last_p > ema_v
     color_base = "#00ff41" if es_compra else "#ff3131"
-    label_sentido = "COMPRA" if es_compra else "VENTA"
+    
+    # ATR (Volatilidad) ajustada a los últimos 14 periodos
     atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
     
     col1, col2, col3 = st.columns(3)
     
-    # CONFIGURACIÓN DIFERENCIADA
+    # CONFIGURACIÓN AJUSTADA: Multiplicadores más bajos para TP más cercanos
     config = [
-        {"id": "CP", "n": "CORTO PLAZO", "ent": last_p, "lotes": 0.50, "m": 1.5, "p": 60, "col": col1},
-        {"id": "MP", "n": "MEDIO PLAZO", "ent": ema_v, "lotes": 0.25, "m": 3.0, "p": 75, "col": col2},
-        {"id": "LP", "n": "LARGO PLAZO", "ent": ema_v * (0.98 if es_compra else 1.02), "lotes": 0.10, "m": 6.0, "p": 88, "col": col3}
+        {
+            "id": "CP", "n": "CORTO PLAZO", "ent": last_p, "lotes": 0.50, 
+            "m_sl": 1.0, "ratio": 1.5, "p": 68, "col": col1
+        },
+        {
+            "id": "MP", "n": "MEDIO PLAZO", "ent": ema_v, "lotes": 0.25, 
+            "m_sl": 2.0, "ratio": 2.0, "p": 78, "col": col2
+        },
+        {
+            "id": "LP", "n": "LARGO PLAZO", "ent": ema_v * (0.99 if es_compra else 1.01), 
+            "lotes": 0.10, "m_sl": 4.0, "ratio": 3.0, "p": 85, "col": col3
+        }
     ]
 
     for c in config:
         with c["col"]:
-            # Cálculo de niveles
-            dist = atr * c["m"]
-            sl = c["ent"] - dist if es_compra else c["ent"] + dist
-            tp = c["ent"] + (dist * 2.5) if es_compra else c["ent"] - (dist * 2.5)
+            # Cálculo de Stop Loss basado en volatilidad (ATR)
+            dist_sl = atr * c["m_sl"]
+            sl = c["ent"] - dist_sl if es_compra else c["ent"] + dist_sl
             
-            # Ajuste de probabilidad por RSI
+            # El Take Profit ahora se calcula como un múltiplo del riesgo (SL)
+            # Esto asegura que el TP sea proporcional a la pérdida asumida
+            riesgo = abs(c["ent"] - sl)
+            tp = c["ent"] + (riesgo * c["ratio"]) if es_compra else c["ent"] - (riesgo * c["ratio"])
+            
+            # Ajuste de probabilidad
             prob = c["p"]
-            if (rsi_v > 70 and es_compra) or (rsi_v < 30 and not es_compra): prob -= 20
+            if (rsi_v > 70 and es_compra) or (rsi_v < 30 and not es_compra): prob -= 15
 
-            # Renderizado de Tarjeta (Corregido para evitar errores visuales)
             st.markdown(f"""
             <div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid {color_base}; border-top: 10px solid {color_base};">
                 <h3 style="margin:0; color:{color_base}; text-align:center;">{c['n']}</h3>
                 <div style="text-align:center; margin:15px 0;">
                     <span style="font-size:2rem; font-weight:bold; color:white;">{prob}%</span><br>
-                    <span style="color:#888; font-size:0.8rem;">PROBABILIDAD</span>
+                    <span style="color:#888; font-size:0.8rem;">ÉXITO ESTIMADO</span>
                 </div>
-                <p style="margin:5px 0;"><b>MODO:</b> {label_sentido}</p>
+                <hr style="border: 0.1px solid #333;">
                 <p style="margin:5px 0;">💰 <b>Lotes:</b> {c['lotes']}</p>
                 <p style="margin:5px 0;">📍 <b>Entrada:</b> {c['ent']:,.2f}</p>
-                <p style="margin:5px 0;">🎯 <b>TP:</b> {tp:,.2f}</p>
-                <p style="margin:5px 0;">🛡️ <b>SL:</b> {sl:,.2f}</p>
+                <p style="margin:5px 0; color:{color_base}; font-weight:bold;">🎯 TP: {tp:,.2f}</p>
+                <p style="margin:5px 0; color:#ff3131;">🛡️ SL: {sl:,.2f}</p>
+                <p style="font-size:0.7rem; color:#666;">RATIO R:B 1:{c['ratio']}</p>
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button(f"Sincronizar {c['id']}", key=f"sync_{c['id']}", use_container_width=True):
+            if st.button(f"Sincronizar {c['id']}", key=f"sync_real_{c['id']}", use_container_width=True):
                 st.session_state['sl_final'] = sl
                 st.session_state['tp_final'] = tp
                 st.session_state['lotes_sug'] = c['lotes']
                 st.session_state['entrada_sug'] = c['ent']
                 st.session_state['modo_op'] = c['id']
                 st.rerun()
-
 # =========================================================
 # BLOQUE 9: SENTINEL BRIDGE (BLINDADO CONTRA NAMEERROR)
 # =========================================================
