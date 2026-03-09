@@ -305,7 +305,19 @@ def render_shielded_chart():
     )
 
     main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"chart_{ticker_actual}")
-
+# Insertar esto dentro de render_shielded_chart(), después de las velas:
+if 'active_trades' in st.session_state:
+    for op in st.session_state.active_trades:
+        if op['ticker'] == st.session_state.ticker:
+            # Línea de Entrada Real (Azul)
+            fig.add_hline(y=op['entrada'], line_color="#0066ff", line_dash="dash",
+                          annotation_text="ENTRADA REAL", row=1, col=1)
+            # Línea de Stop Loss Real (Rojo)
+            fig.add_hline(y=op['sl'], line_color="#ff3131", line_dash="dot",
+                          annotation_text="SL REAL", row=1, col=1)
+            # Línea de Take Profit Real (Verde)
+            fig.add_hline(y=op['tp'], line_color="#00ff41", line_dash="dot",
+                          annotation_text="TP REAL", row=1, col=1)
 render_shielded_chart()
 # =========================================================
 # BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
