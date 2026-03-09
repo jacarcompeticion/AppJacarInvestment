@@ -490,5 +490,32 @@ def render_sentinel_bridge():
                 st.session_state.active_trades.append(nueva_op)
                 st.success(f"✅ Registrado. Monitor activo para {ticker_actual}")
 
-# EJECUCIÓN FINAL
-render_sentinel_bridge()
+# =========================================================
+# LÓGICA DE UNIFICACIÓN SENTINEL (EJECUCIÓN FINAL)
+# =========================================================
+
+# 1. Obtención de datos usando el selector de temporalidad superior
+# Si 'int_top' no existe aún (primer arranque), usamos '1h'
+intervalo_actual = st.session_state.get('int_top', '1h')
+ticker_actual = st.session_state.get('ticker', 'NQ=F') # O tu selector de ticker
+
+# Ejecutamos el motor de datos
+df_mercado = get_market_data(ticker_actual, interval=intervalo_actual)
+
+if df_mercado is not None and not df_mercado.empty:
+    # --- ORDEN DE RENDERIZADO ---
+    
+    # BLOQUE 7: EL RADAR (Gráfico + EMA + RSI + Vol Bicolor)
+    # Esta función ahora devuelve el nuevo intervalo si el usuario lo cambia
+    render_shielded_chart(df_mercado, ticker_actual)
+    
+    # BLOQUE 8: ESTRATEGIAS (CP, MP, LP)
+    # Asegúrate de que tu función del Bloque 8 se llame aquí
+    # Ejemplo: render_strategy_cards(df_mercado)
+    
+    # BLOQUE 9: REGISTRO XTB
+    # render_sentinel_bridge() 
+
+else:
+    st.info("💡 Sincronizando niveles de entrada y datos de mercado...")
+    st.caption("Si el mensaje persiste, intenta cambiar el activo o la temporalidad.")
