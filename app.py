@@ -1,6 +1,20 @@
 import streamlit as st
 import yfinance as yf
-import random
+import pandas as pd
+import pandas_ta as ta
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+# --- AQUÍ VA EL NUEVO IMPORT ---
+from streamlit_autorefresh import st_autorefresh
+
+# =========================================================
+# CONFIGURACIÓN DE PÁGINA Y AUTO-REFRESCO
+# =========================================================
+st.set_page_config(page_title="Sentinel Investment Radar", layout="wide")
+
+# PEGADO DEL PASO 2 AQUÍ:
+# Esto hará que toda la app se recargue cada 15 segundos.
+count = st_autorefresh(interval=15000, limit=None, key="sentinel_refresh")
 
 # =========================================================
 # BLOQUE 1: MOTOR DE ESTILOS (COLORES FIJOS Y SENTINEL ROJO)
@@ -204,6 +218,11 @@ if st.session_state.view == "Lobo":
                         st.session_state.ticker = data[0]
                         st.session_state.ticker_name = name
                     st.markdown('</div>', unsafe_allow_html=True)
+
+
+
+
+
 # =========================================================
 # BLOQUE 6: MOTOR DE DATOS E INDICADORES (EMA & RSI)
 # =========================================================
