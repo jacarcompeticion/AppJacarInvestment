@@ -328,116 +328,94 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 
 # =========================================================
-# BLOQUE 8: ESTRATEGIAS CON VOLUMEN Y NIVELES INDEPENDIENTES
+# BLOQUE 8: ESTRATEGIAS CON PROBABILIDAD Y ENTRADAS ESCALONADAS
 # =========================================================
 def render_strategy_cards(df):
     st.markdown("---")
     st.subheader("🎯 ESTRATEGIAS SUGERIDAS SENTINEL")
     
     if df is None or 'EMA_20' not in df.columns:
-        st.warning("Calculando indicadores de tendencia...")
+        st.warning("Calculando probabilidades de éxito...")
         return
 
     last_p = float(df['Close'].iloc[-1])
     ema_v = float(df['EMA_20'].iloc[-1])
+    rsi_v = float(df['RSI'].iloc[-1])
     
-    # 1. SENTIDO DE LA OPERACIÓN (Basado en EMA 20)
+    # 1. SENTIDO Y FUERZA
     es_compra = last_p > ema_v
     color_base = "#00ff41" if es_compra else "#ff3131"
-    label_sentido = "COMPRA (LONG)" if es_compra else "VENTA (SHORT)"
-    
-    # 2. VOLATILIDAD PARA CÁLCULO DE NIVELES
     atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
     
     col1, col2, col3 = st.columns(3)
     
-    # CONFIGURACIÓN DIFERENCIADA POR TEMPORALIDAD
-    # Cada una tiene su propio multiplicador de riesgo y volumen sugerido
+    # CONFIGURACIÓN TÉCNICA DIFERENCIADA
     config = [
-        {"id": "CP", "nombre": "CORTO PLAZO", "mult": 1.5, "lotes": 0.50, "col": col1},
-        {"id": "MP", "nombre": "MEDIO PLAZO", "mult": 3.0, "lotes": 0.20, "col": col2},
-        {"id": "LP", "nombre": "LARGO PLAZO", "mult": 6.0, "lotes": 0.05, "col": col3}
+        {
+            "id": "CP", "nombre": "CORTO PLAZO", 
+            "entrada": last_p, # Entrada a mercado
+            "lotes": 0.50, "mult": 1.5,
+            "prob_base": 65 if (40 < rsi_v < 60) else 45,
+            "desc": "Entrada Inmediata (Market)", "col": col1
+        },
+        {
+            "id": "MP", "nombre": "MEDIO PLAZO", 
+            "entrada": ema_v, # Entrada en el retroceso a la EMA
+            "lotes": 0.25, "mult": 3.0,
+            "prob_base": 75 if es_compra else 70,
+            "desc": "Pullback a EMA 20", "col": col2
+        },
+        {
+            "id": "LP", "nombre": "LARGO PLAZO", 
+            "entrada": ema_v * (0.98 if es_compra else 1.02), # Entrada en zona de valor profunda
+            "lotes": 0.10, "mult": 6.0,
+            "prob_base": 85,
+            "desc": "Zona de Valor Profunda", "col": col3
+        }
     ]
 
     for c in config:
         with c["col"]:
-            # Cálculo de niveles independientes
+            # Cálculo de niveles desde SU precio de entrada específico
+            ent_especifica = c["entrada"]
             distancia = atr * c["mult"]
+            
             if es_compra:
-                sl = last_p - distancia
-                tp = last_p + (distancia * 2.5) # Ratio 1:2.5
+                sl = ent_especifica - distancia
+                tp = ent_especifica + (distancia * 3) # Mayor ratio para LP
             else:
-                sl = last_p + distancia
-                tp = last_p - (distancia * 2.5)
+                sl = ent_especifica + distancia
+                tp = ent_especifica - (distancia * 3)
 
-            # --- INTERFAZ DE TARJETA ---
+            # Cálculo de Probabilidad Dinámica
+            # Penalizamos si el RSI está en extremos
+            prob_final = c["prob_base"]
+            if rsi_v > 70 or rsi_v < 30: prob_final -= 15
+            
             st.markdown(f"""
-            <div style="background-color: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid {color_base}; border-top: 8px solid {color_base}; min-height: 280px;">
+            <div style="background-color: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid {color_base}; border-top: 8px solid {color_base}; min-height: 380px;">
                 <h4 style="margin:0; color: {color_base}; text-align: center;">{c["nombre"]}</h4>
-                <p style="margin:10px 0; font-size: 1.2rem; text-align: center; font-weight: bold;">{label_sentido}</p>
+                <p style="text-align: center; font-size: 0.8rem; color: #888;">{c['desc']}</p>
+                
+                <div style="text-align: center; margin: 10px 0;">
+                    <span style="font-size: 1.5rem; font-weight: bold; color: {color_base};">{prob_final}%</span>
+                    <br><span style="font-size: 0.7rem; color: #aaa;">PROBABILIDAD ÉXITO</span>
+                </div>
+                
                 <hr style="margin:10px 0; border: 0.5px solid #333;">
-                <p style="margin:5px 0;">💰 <b>Volumen:</b> <span style="color:{color_base}; font-size:1.1rem;">{c['lotes']} Lotes</span></p>
-                <p style="margin:2px 0;">📍 <b>Entrada:</b> {last_p:,.2f}</p>
-                <p style="margin:2px 0;">🎯 <b>Take Profit:</b> {tp:,.2f}</p>
-                <p style="margin:2px 0;">🛡️ <b>Stop Loss:</b> {sl:,.2f}</p>
+                <p style="margin:5px 0;">💰 <b>Volumen:</b> {c['lotes']} Lotes</p>
+                <p style="margin:2px 0;">📍 <b>Entrada:</b> {ent_especifica:,.2f}</p>
+                <p style="margin:2px 0;">🎯 <b>Target:</b> {tp:,.2f}</p>
+                <p style="margin:2px 0;">🛡️ <b>Stop:</b> {sl:,.2f}</p>
             </div>
             """, unsafe_allow_html=True)
 
-            # 3. BOTÓN DE SELECCIÓN (Carga dinámica al Bloque 9)
-            if st.button(f"Aplicar {c['id']}", key=f"btn_v2_{c['id']}", use_container_width=True):
+            if st.button(f"Sincronizar {c['id']}", key=f"v3_{c['id']}", use_container_width=True):
                 st.session_state['sl_final'] = sl
                 st.session_state['tp_final'] = tp
                 st.session_state['lotes_sug'] = c['lotes']
-                st.session_state['entrada_sug'] = last_p
-                st.session_state['modo_seleccionado'] = c['id']
-                st.toast(f"✅ Datos de {c['id']} cargados en el Bridge")
-
-            # 4. COPIADO RÁPIDO PARA XTB
-            with st.expander("📋 Datos para X-Station"):
-                st.write("Volumen (Lotes):")
-                st.code(f"{c['lotes']}", language="text")
-                st.write("Precio Entrada:")
-                st.code(f"{last_p:,.4f}", language="text")
-                st.write("Take Profit:")
-                st.code(f"{tp:,.4f}", language="text")
-                st.write("Stop Loss:")
-                st.code(f"{sl:,.4f}", language="text")
-
-# =========================================================
-# BLOQUE 9: SENTINEL BRIDGE (RECIBE LOS LOTES Y PRECIOS)
-# =========================================================
-def render_sentinel_bridge():
-    st.markdown("---")
-    st.subheader("🚀 SENTINEL BRIDGE: REGISTRO REAL")
-    
-    # Recuperamos los valores de la estrategia seleccionada arriba
-    sl_pre = st.session_state.get('sl_final', 0.0)
-    tp_pre = st.session_state.get('tp_final', 0.0)
-    lotes_pre = st.session_state.get('lotes_sug', 0.10)
-    ent_pre = st.session_state.get('entrada_sug', st.session_state.get('last_price', 0.0))
-
-    with st.form("form_sentinel_v2"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            p_entrada = st.number_input("Precio Entrada Real", value=float(ent_pre), format="%.4f")
-            lotes_final = st.number_input("Lotes en XTB", value=float(lotes_pre), step=0.01)
-        with c2:
-            sl_real = st.number_input("Stop Loss Real", value=float(sl_pre), format="%.4f")
-        with c3:
-            tp_real = st.number_input("Take Profit Real", value=float(tp_pre), format="%.4f")
-        
-        if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA EN RADAR", use_container_width=True):
-            nueva_op = {
-                "ticker": st.session_state.ticker,
-                "entrada": p_entrada,
-                "lotes": lotes_final,
-                "sl": sl_real,
-                "tp": tp_real,
-                "modo": st.session_state.get('modo_seleccionado', 'MANUAL')
-            }
-            if 'active_trades' not in st.session_state: st.session_state.active_trades = []
-            st.session_state.active_trades.append(nueva_op)
-            st.success("🛰️ Operación registrada. Vigila el Radar (Bloque 7) para ver tus líneas.")
+                st.session_state['entrada_sug'] = ent_especifica
+                st.toast(f"✅ Configuración {c['id']} enviada al Sentinel Bridge")
 # --- LÓGICA DE RENDERIZADO FINAL ---
 # 1. Bajamos los datos
 df_final = get_market_data(st.session_state.get('ticker', 'NQ=F'), 
