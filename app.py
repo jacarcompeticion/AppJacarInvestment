@@ -206,12 +206,23 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO (V101 - CON PRECIO EN TIEMPO REAL)
+# BLOQUE 7: MOTOR GRÁFICO (V102 - PRECISIÓN DINÁMICA)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
+
+# 1. FUNCIÓN DE DESCARGA (DEBE ESTAR FUERA O ANTES DE RENDER_SHIELDED_CHART)
+@st.cache_data(ttl=60)
+def fetch_safe_data(symbol, period, interval):
+    try:
+        data = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+        return data
+    except Exception:
+        return pd.DataFrame()
 
 def render_shielded_chart():
     # Placeholder para evitar duplicados
@@ -226,7 +237,7 @@ def render_shielded_chart():
                 "15m (24 horas)": ["1d", "15m"],
                 "1h (72 horas)": ["3d", "1h"]
             }
-            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key="range_selector_v101")
+            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key="range_selector_v102")
             periodo, intervalo = opciones[seleccion]
 
     # Obtención de datos
@@ -237,9 +248,12 @@ def render_shielded_chart():
         st.warning(f"⚠️ Sincronizando flujo de datos para {ticker_actual}...")
         return
 
-    # Cálculos de Precio y Tendencia
-    df = df.dropna(subset=['Close'])
+    # --- LÓGICA DE PRECISIÓN DE DECIMALES ---
+    # Si el precio es menor a 10 (Forex o centavos), usamos 4 decimales. Si no, usamos 2.
     precio_actual = float(df['Close'].iloc[-1])
+    precision = 4 if precio_actual < 50 else 2 
+    
+    df = df.dropna(subset=['Close'])
     ema_20 = df['Close'].ewm(span=20, adjust=False).mean()
     tendencia_raw = "ALCISTA" if precio_actual > ema_20.iloc[-1] else "BAJISTA"
     
@@ -247,55 +261,44 @@ def render_shielded_chart():
     st.session_state['last_price'] = precio_actual
     st.session_state['last_trend'] = tendencia_raw
 
-    # --- NUEVA FILA DE MÉTRICAS (4 COLUMNAS) ---
+    # --- MÉTRICAS CON PRECISIÓN DINÁMICA ---
     h_max, l_min = float(df['High'].max()), float(df['Low'].min())
     m1, m2, m3, m4 = st.columns(4)
     
-    m1.metric("PRECIO ACTUAL", f"{precio_actual:,.4f}", delta_color="normal")
-    m2.metric("MÁXIMO", f"{h_max:,.4f}")
-    m3.metric("MÍNIMO", f"{l_min:,.4f}")
+    m1.metric("PRECIO ACTUAL", f"{precio_actual:,.{precision}f}")
+    m2.metric("MÁXIMO", f"{h_max:,.{precision}f}")
+    m3.metric("MÍNIMO", f"{l_min:,.{precision}f}")
     
-    # Color dinámico para la tendencia
     t_icon = "🟢" if tendencia_raw == "ALCISTA" else "🔴"
     m4.metric("TENDENCIA", f"{tendencia_raw} {t_icon}")
 
-    # Construcción del Gráfico Profesional
+    # Gráfico Profesional
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                         vertical_spacing=0.03, row_width=[0.2, 0.8])
 
     time_labels = df.index.strftime('%H:%M')
 
-    # Velas
     fig.add_trace(go.Candlestick(
         x=time_labels, open=df['Open'], high=df['High'], 
         low=df['Low'], close=df['Close'],
         name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    # Línea de Precio Actual (HILO HORIZONTAL)
+    # Línea de Precio Actual
     fig.add_hline(y=precio_actual, line_dash="dot", line_color="white", 
-                  annotation_text=f"ACTUAL: {precio_actual:,.4f}", 
+                  annotation_text=f"ACTUAL: {precio_actual:,.{precision}f}", 
                   annotation_position="bottom right", row=1, col=1)
-
-    # EMA 20
-    fig.add_trace(go.Scatter(x=time_labels, y=ema_20, 
-                             line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
-
-    # Volumen
-    vol_colors = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df['Open'], df['Close'])]
-    fig.add_trace(go.Bar(x=time_labels, y=df['Volume'], 
-                         marker_color=vol_colors, name="Volumen"), row=2, col=1)
 
     fig.update_xaxes(type='category', nticks=10)
     fig.update_layout(
-        template="plotly_dark", height=500,
+        template="plotly_dark", height=450,
         plot_bgcolor="#05070a", paper_bgcolor="#05070a",
         xaxis_rangeslider_visible=False,
         margin=dict(l=0, r=0, t=10, b=0),
         legend=dict(orientation="h", y=1.05, x=1)
     )
 
-    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="chart_v101")
+    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="chart_v102")
 
 render_shielded_chart()
 # =========================================================
