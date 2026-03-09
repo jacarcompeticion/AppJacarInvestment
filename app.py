@@ -205,120 +205,77 @@ if st.session_state.view == "Lobo":
                         st.session_state.ticker_name = name
                     st.markdown('</div>', unsafe_allow_html=True)
 
-# =========================================================
-# BLOQUE 7: MOTOR GRÁFICO (V103 - CARGA ULTRA-RÁPIDA)
-# =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import pandas as pd
-import yfinance as yf
-import time
 
-# 1. FUNCIÓN DE DESCARGA OPTIMIZADA
-@st.cache_data(ttl=30, show_spinner=False) # Caché de 30 seg para datos frescos
-def fetch_safe_data(symbol, period, interval):
-    symbol = symbol.strip().upper()
-    try:
-        # Intento de descarga primaria
-        data = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
-        
-        # Si falla (vacío), intentamos un fallback con más historial
-        if data.empty:
-            data = yf.download(symbol, period="5d", interval=interval, progress=False, auto_adjust=True)
-            
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        return data
-    except Exception as e:
-        print(f"Error en descarga: {e}")
-        return pd.DataFrame()
-
-def render_shielded_chart():
-    main_chart_placeholder = st.empty()
-    
-    # Contenedor de controles
-    with st.container():
-        c_sel, _ = st.columns([1, 4])
-        with c_sel:
-            opciones = {
-                "1m (1h)": ["1h", "1m"],
-                "5m (6h)": ["6h", "5m"],
-                "15m (1d)": ["1d", "15m"],
-                "1h (3d)": ["3d", "1h"]
-            }
-            # Key única dinámica para evitar bloqueos de estado
-            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key=f"range_{st.session_state.ticker}")
-            periodo, intervalo = opciones[seleccion]
-
-    # Ejecución de descarga
-    ticker_actual = st.session_state.ticker
-    df = fetch_safe_data(ticker_actual, periodo, intervalo)
-    
-    # Si sigue vacío después del fallback, mostramos un error más claro
-    if df is None or df.empty or len(df) < 2:
-        st.error(f"❌ No hay conexión con el servidor de datos para {ticker_actual}. Reintentando...")
-        time.sleep(1)
-        st.rerun()
+def render_shielded_chart(df, ticker_actual):
+    if df is None or df.empty:
+        st.warning("⚠️ No hay datos disponibles para generar el gráfico.")
         return
 
-    # Lógica de Precisión Dinámica
-    precio_actual = float(df['Close'].iloc[-1])
-    # Ajuste: 4 decimales para activos < 50 (Divisas/Materias), 2 para el resto (Índices)
-    precision = 4 if precio_actual < 50 else 2 
-    
-    ema_20 = df['Close'].ewm(span=20, adjust=False).mean()
-    tendencia_raw = "ALCISTA" if precio_actual > ema_20.iloc[-1] else "BAJISTA"
-    
-    # Sincronización con Bloque 8
-    st.session_state['last_price'] = precio_actual
-    st.session_state['last_trend'] = tendencia_raw
+    # 1. Configuración de la Figura (Velas + Volumen)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.03, subplot_titles=(f'Gráfico Sentinel: {ticker_actual}', 'Volumen'), 
+                        row_width=[0.2, 0.7])
 
-    # Métricas Superiores
-    h_max, l_min = float(df['High'].max()), float(df['Low'].min())
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("PRECIO ACTUAL", f"{precio_actual:,.{precision}f}")
-    m2.metric("MÁXIMO", f"{h_max:,.{precision}f}")
-    m3.metric("MÍNIMO", f"{l_min:,.{precision}f}")
-    m4.metric("TENDENCIA", f"{tendencia_raw} {'🟢' if tendencia_raw == 'ALCISTA' else '🔴'}")
-
-    # Gráfico Profesional (Reducido a 400px para evitar scroll excesivo)
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_width=[0.2, 0.8])
-    time_labels = df.index.strftime('%H:%M')
-
+    # Velas Japonesas
     fig.add_trace(go.Candlestick(
-        x=time_labels, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+        x=df.index, open=df['Open'], high=df['High'],
+        low=df['Low'], close=df['Close'], name='Precio',
+        increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    # Línea de Precio Horizontal
-    fig.add_hline(y=precio_actual, line_dash="dot", line_color="white", opacity=0.5,
-                  annotation_text=f"ACTUAL: {precio_actual:,.{precision}f}", 
-                  annotation_position="bottom right", row=1, col=1)
+    # Volumen
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volumen', marker_color='#333'), row=2, col=1)
 
-    fig.update_xaxes(type='category', nticks=8)
+    # 2. --- LÓGICA DE SINCRONIZACIÓN SENTINEL (OPERACIONES REALES) ---
+    # Buscamos en el estado de la sesión si hay operaciones para este ticker
+    if 'active_trades' in st.session_state:
+        for op in st.session_state.active_trades:
+            # Solo dibujamos si la operación coincide con el activo en pantalla
+            if op['ticker'] == ticker_actual:
+                # Línea de Entrada (Azul - Tu precio real de ejecución)
+                fig.add_hline(y=float(op['entrada']), 
+                              line_color="#0066ff", 
+                              line_dash="dash",
+                              annotation_text=f" 🔵 ENTRADA ({op['modo']})",
+                              annotation_position="top left",
+                              row=1, col=1)
+                
+                # Línea de Stop Loss (Rojo - Tu nivel de salida en pérdida)
+                fig.add_hline(y=float(op['sl']), 
+                              line_color="#ff3131", 
+                              line_dash="dot",
+                              annotation_text=" 🔴 SL REAL",
+                              annotation_position="bottom left",
+                              row=1, col=1)
+                
+                # Línea de Take Profit (Verde - Tu objetivo de beneficio)
+                fig.add_hline(y=float(op['tp']), 
+                              line_color="#00ff41", 
+                              line_dash="dot",
+                              annotation_text=" 🟢 TP REAL",
+                              annotation_position="top left",
+                              row=1, col=1)
+
+    # 3. Personalización Estética (Estilo Dark Profesional)
     fig.update_layout(
-        template="plotly_dark", height=400,
-        plot_bgcolor="#05070a", paper_bgcolor="#05070a",
+        template="plotly_dark",
         xaxis_rangeslider_visible=False,
-        margin=dict(l=0, r=0, t=5, b=0),
-        legend=dict(orientation="h", y=1.1, x=1)
+        height=600,
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
-    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=f"chart_{ticker_actual}")
-# Insertar esto dentro de render_shielded_chart(), después de las velas:
-if 'active_trades' in st.session_state:
-    for op in st.session_state.active_trades:
-        if op['ticker'] == st.session_state.ticker:
-            # Línea de Entrada Real (Azul)
-            fig.add_hline(y=op['entrada'], line_color="#0066ff", line_dash="dash",
-                          annotation_text="ENTRADA REAL", row=1, col=1)
-            # Línea de Stop Loss Real (Rojo)
-            fig.add_hline(y=op['sl'], line_color="#ff3131", line_dash="dot",
-                          annotation_text="SL REAL", row=1, col=1)
-            # Línea de Take Profit Real (Verde)
-            fig.add_hline(y=op['tp'], line_color="#00ff41", line_dash="dot",
-                          annotation_text="TP REAL", row=1, col=1)
-render_shielded_chart()
+    # Ajuste de ejes para que el precio se vea claro
+    fig.update_yaxes(gridcolor='#222', zeroline=False)
+    fig.update_xaxes(gridcolor='#222', rangeslider_visible=False)
+
+    # Renderizar en Streamlit
+    st.plotly_chart(fig, use_container_width=True, key=f"chart_v105_{ticker_actual}")
+
+# --- EJECUCIÓN DEL BLOQUE ---
+    render_shielded_chart(df_analisis, st.session_state.ticker)
 # =========================================================
 # BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
 # =========================================================
