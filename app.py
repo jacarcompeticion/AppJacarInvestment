@@ -235,33 +235,22 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 def get_market_data(ticker, interval='1h'):
-    # Ajuste dinámico de periodo para el Zoom automático
-    period_map = {'1m': '1d', '5m': '1d', '15m': '3d', '1h': '7d', '1d': '60d'}
-    period = period_map.get(interval, '7d')
-    
     try:
-        data = yf.download(ticker, period=period, interval=interval, progress=False)
+        data = yf.download(ticker, period='5d', interval=interval)
         if data.empty: return None
-        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         
-        df = data.dropna().copy()
-        
-        # --- CÁLCULO DE INDICADORES ---
+        df = data.copy()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        # Indicadores base para el Radar
         df['EMA_20'] = ta.ema(df['Close'], length=20)
         df['RSI'] = ta.rsi(df['Close'], length=14)
-        
-        # --- LÓGICA DE COLOR PARA VOLUMEN ---
-        # Si Close > Open = Verde (#00ff41), else Rojo (#ff3131)
-        df['Vol_Color'] = ['#00ff41' if row['Close'] >= row['Open'] else '#ff3131' for _, row in df.iterrows()]
-        
-        if not df.empty:
-            st.session_state.last_price = float(df['Close'].iloc[-1])
-            st.session_state.df_analisis = df
-            st.session_state.ticker = ticker
         return df
     except Exception as e:
-        st.error(f"Error B6: {e}")
+        st.error(f"Error en descarga: {e}")
         return None
+
 
 # =========================================================
 # BLOQUE 7: RADAR VISUAL (VOLUMEN BICOLOR & CONTROLES)
