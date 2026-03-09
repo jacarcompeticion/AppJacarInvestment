@@ -17,6 +17,20 @@ if 'active_trades' not in st.session_state:
 # Esto hará que toda la app se recargue cada 15 segundos.
 count = st_autorefresh(interval=15000, limit=None, key="sentinel_refresh")
 
+# --- CONFIGURACIÓN TELEGRAM ---
+TELEGRAM_TOKEN = 8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU
+TELEGRAM_CHAT_ID = 1296326413
+
+import requests
+
+def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error Telegram: {e}")
+
 # =========================================================
 # BLOQUE 1: MOTOR DE ESTILOS (COLORES FIJOS Y SENTINEL ROJO)
 # =========================================================
@@ -486,6 +500,68 @@ def render_sentinel_bridge():
             })
             st.success(f"Vigilando {ticker_actual}. Riesgo: {riesgo_dinero:,.2f}€")
             st.rerun()
+
+#========================================
+# BLOQUE 11 : NOTICIAS
+#=======================================
+def render_sentinel_news(ticker):
+    st.markdown("---")
+    st.subheader(f"📰 INTELIGENCIA DE MERCADO: {ticker}")
+    
+    # 1. Obtención de noticias vía yfinance (Fuentes: Reuters, Yahoo Finance, etc.)
+    asset = yf.Ticker(ticker)
+    news_list = asset.news
+    
+    if not news_list:
+        st.info("No hay noticias críticas recientes para este activo.")
+        return
+
+    for news in news_list[:5]: # Analizamos las 5 más recientes
+        title = news.get('title')
+        publisher = news.get('publisher')
+        link = news.get('link')
+        # Convertimos el timestamp de la noticia
+        pub_time = pd.to_datetime(news.get('providerPublishTime'), unit='s')
+        
+        # 2. Lógica de Análisis de Impacto (Simplificada para ejecución rápida)
+        # En una versión Pro, aquí conectaríamos con una API de IA (GPT-4)
+        impacto = "NEUTRAL"
+        color_impacto = "#888888"
+        accion = "MANTENER VIGILANCIA"
+        
+        keywords_pos = ["bullish", "growth", "upgrade", "profit", "surge", "buy"]
+        keywords_neg = ["bearish", "crash", "drop", "warns", "lawsuit", "deficit", "sell"]
+        
+        if any(w in title.lower() for w in keywords_pos):
+            impacto = "ALTO (POSITIVO)"
+            color_impacto = "#00ff41"
+            accion = "BUSCAR ENTRADAS EN LARGO (BUY)"
+        elif any(w in title.lower() for w in keywords_neg):
+            impacto = "ALTO (CRÍTICO)"
+            color_impacto = "#ff3131"
+            accion = "REDUCIR EXPOSICIÓN / BUSCAR SHORT"
+
+        # 3. RENDERIZADO EN UI
+        with st.container():
+            st.markdown(f"""
+            <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px;">
+                <small style="color: #666;">{publisher} | {pub_time.strftime('%H:%M')}h</small>
+                <h4 style="margin: 5px 0;"><a href="{link}" style="color: white; text-decoration: none;">{title}</a></h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <span style="color: {color_impacto}; font-weight: bold; font-size: 0.8rem;">IMPACTO: {impacto}</span>
+                    <span style="background-color: {color_impacto}33; color: {color_impacto}; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: bold;">{accion}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 4. ALERTA TELEGRAM (Si es impacto alto y no ha sido enviada)
+        if impacto != "NEUTRAL":
+            alert_key = f"alert_{news.get('uuid')}"
+            if alert_key not in st.session_state:
+                msg = f"🚨 *SENTINEL CRITICAL ALERT*\n\nActivo: {ticker}\nNoticia: {title}\nImpacto: {impacto}\nAcción: {accion}"
+                send_telegram_alert(msg)
+                st.session_state[alert_key] = True
+
 # =========================================================
 # ORQUESTADOR FINAL (EL MOTOR QUE ACTIVA EL RADAR)
 # =========================================================
@@ -515,3 +591,11 @@ if df_final is not None and not df_final.empty:
         render_sentinel_bridge()                  # Bloque 9: El Formulario
 else:
     st.error("📡 Error de conexión: No se han podido recibir datos de Yahoo Finance.")
+    if st.session_state.view == "Noticias":
+    render_sentinel_news(t_final)
+elif st.session_state.view in ["Lobo", "Predicciones"]:
+    render_shielded_chart(df_final, t_final)
+    render_strategy_cards(df_final)
+    render_sentinel_bridge()
+
+
