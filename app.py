@@ -206,30 +206,19 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO PROFESIONAL (V100 - ANTI-ERROR)
+# BLOQUE 7: MOTOR GRÁFICO (V101 - CON PRECIO EN TIEMPO REAL)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
 
-@st.cache_data(ttl=60)
-def fetch_safe_data(symbol, period, interval):
-    try:
-        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df
-    except Exception:
-        return pd.DataFrame()
-
 def render_shielded_chart():
-    # 1. CONTENEDOR ÚNICO (Evita la duplicidad del gráfico)
+    # Placeholder para evitar duplicados
     main_chart_placeholder = st.empty()
     
-    # 2. SELECCIÓN DE RANGO (Desplegable solicitado)
     with st.container():
-        c_sel, c_info = st.columns([1, 4])
+        c_sel, _ = st.columns([1, 4])
         with c_sel:
             opciones = {
                 "1m (1 hora)": ["1h", "1m"],
@@ -237,74 +226,78 @@ def render_shielded_chart():
                 "15m (24 horas)": ["1d", "15m"],
                 "1h (72 horas)": ["3d", "1h"]
             }
-            # Key única para evitar conflictos de estado
-            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key="range_selector")
+            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key="range_selector_v101")
             periodo, intervalo = opciones[seleccion]
 
-    # 3. OBTENCIÓN Y LIMPIEZA DE DATOS
+    # Obtención de datos
     ticker_actual = st.session_state.ticker
     df = fetch_safe_data(ticker_actual, periodo, intervalo)
     
     if df is None or df.empty or len(df) < 5:
-        st.warning(f"⚠️ Esperando flujo de datos para {ticker_actual}...")
+        st.warning(f"⚠️ Sincronizando flujo de datos para {ticker_actual}...")
         return
 
-    # 4. CÁLCULOS TÉCNICOS (Para alimentar al Bloque 8)
+    # Cálculos de Precio y Tendencia
     df = df.dropna(subset=['Close'])
+    precio_actual = float(df['Close'].iloc[-1])
     ema_20 = df['Close'].ewm(span=20, adjust=False).mean()
+    tendencia_raw = "ALCISTA" if precio_actual > ema_20.iloc[-1] else "BAJISTA"
     
-    # Guardar en sesión para el Bloque 8 (Sentinel Engine)
-    st.session_state['last_price'] = float(df['Close'].iloc[-1])
-    st.session_state['last_trend'] = "ALCISTA" if df['Close'].iloc[-1] > ema_20.iloc[-1] else "BAJISTA"
+    # Guardar en sesión para el Bloque 8
+    st.session_state['last_price'] = precio_actual
+    st.session_state['last_trend'] = tendencia_raw
 
-    # 5. MÉTRICAS RÁPIDAS (Superior al gráfico)
+    # --- NUEVA FILA DE MÉTRICAS (4 COLUMNAS) ---
     h_max, l_min = float(df['High'].max()), float(df['Low'].min())
-    m1, m2, m3 = st.columns(3)
-    m1.metric("MÁXIMO", f"{h_max:,.2f}")
-    m2.metric("MÍNIMO", f"{l_min:,.2f}")
-    m3.metric("TENDENCIA", st.session_state['last_trend'] + (" 🟢" if "ALCISTA" in st.session_state['last_trend'] else " 🔴"))
+    m1, m2, m3, m4 = st.columns(4)
+    
+    m1.metric("PRECIO ACTUAL", f"{precio_actual:,.4f}", delta_color="normal")
+    m2.metric("MÁXIMO", f"{h_max:,.4f}")
+    m3.metric("MÍNIMO", f"{l_min:,.4f}")
+    
+    # Color dinámico para la tendencia
+    t_icon = "🟢" if tendencia_raw == "ALCISTA" else "🔴"
+    m4.metric("TENDENCIA", f"{tendencia_raw} {t_icon}")
 
-    # 6. CONSTRUCCIÓN DEL GRÁFICO (Eje Ordinal - Sin huecos)
+    # Construcción del Gráfico Profesional
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                         vertical_spacing=0.03, row_width=[0.2, 0.8])
 
-    # Convertimos el índice a string para eliminar fines de semana
-    time_labels = df.index.strftime('%d/%m %H:%M')
+    time_labels = df.index.strftime('%H:%M')
 
-    # Velas Japonesas
+    # Velas
     fig.add_trace(go.Candlestick(
         x=time_labels, open=df['Open'], high=df['High'], 
         low=df['Low'], close=df['Close'],
         name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
+    # Línea de Precio Actual (HILO HORIZONTAL)
+    fig.add_hline(y=precio_actual, line_dash="dot", line_color="white", 
+                  annotation_text=f"ACTUAL: {precio_actual:,.4f}", 
+                  annotation_position="bottom right", row=1, col=1)
+
     # EMA 20
     fig.add_trace(go.Scatter(x=time_labels, y=ema_20, 
                              line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
 
-    # Volumen con color dinámico
+    # Volumen
     vol_colors = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df['Open'], df['Close'])]
     fig.add_trace(go.Bar(x=time_labels, y=df['Volume'], 
                          marker_color=vol_colors, name="Volumen"), row=2, col=1)
 
-    # 7. ESTILOS Y COMPORTAMIENTO
-    fig.update_xaxes(type='category', nticks=10) # Fuerza el eje ordinal (sin huecos)
+    fig.update_xaxes(type='category', nticks=10)
     fig.update_layout(
-        template="plotly_dark", 
-        height=550,
-        plot_bgcolor="#05070a", 
-        paper_bgcolor="#05070a",
+        template="plotly_dark", height=500,
+        plot_bgcolor="#05070a", paper_bgcolor="#05070a",
         xaxis_rangeslider_visible=False,
         margin=dict(l=0, r=0, t=10, b=0),
         legend=dict(orientation="h", y=1.05, x=1)
     )
 
-    # Renderizado final en el placeholder para evitar duplicados
-    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="main_chart_xtb")
+    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="chart_v101")
 
-# Ejecución del bloque
 render_shielded_chart()
-
 # =========================================================
 # BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
 # =========================================================
