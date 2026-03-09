@@ -521,100 +521,109 @@ def send_telegram_alert(message):
 import feedparser
 
 def render_sentinel_news(ticker):
-    st.markdown(f"### 📡 XTB SIGNAL TERMINAL: {ticker}")
+    st.markdown(f"### 🚀 XTB COMMAND CENTER: {ticker}")
     
-    # 1. Diccionario de activos XTB para el nombre oficial
+    # 1. Mapeo de Activos XTB
     xtb_names = {
-        "NQ=F": "US100 (NASDAQ)",
-        "ES=F": "US500 (S&P500)",
-        "GC=F": "GOLD (ORO)",
-        "BTC-USD": "BITCOIN",
-        "EURUSD=X": "EURUSD"
+        "NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD",
+        "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD", "CL=F": "OIL.WTI"
     }
-    nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0])
+    nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0].upper())
     
-    # 2. Obtención de Noticias
+    # 2. Obtención de Noticias (Multifuente)
     feeds = ["https://es.investing.com/rss/news.rss", "https://es.investing.com/rss/market_overview.rss"]
     all_entries = []
     for url in feeds:
         try:
             f = feedparser.parse(url)
-            all_entries.extend(f.entries[:8])
+            all_entries.extend(f.entries[:6])
         except: continue
-
-    if not all_entries:
-        st.info("Sincronizando con el servidor de noticias...")
-        return
 
     price = st.session_state.get('last_price', 0.0)
     
+    # Simulación de ATR (Volatilidad media) para el ajuste de SL/TP
+    atr_simulado = price * 0.008 # 0.8% de volatilidad media estimada
+
     for i, entry in enumerate(all_entries):
         title = entry.title
-        summary = entry.get('summary', 'Haga clic para ver el análisis completo.')
+        summary = entry.get('summary', 'Análisis técnico en proceso...')
         
-        # --- Lógica de Decisión y Colores ---
+        # --- LÓGICA DE SEÑAL Y RIESGO ---
         tipo_orden = "OBSERVAR"
-        color_borde = "#333333" # Gris por defecto
-        bg_card = "#f8f9fa"     # Fondo claro
+        color_xtb = "#333333" 
+        riesgo_alto = False
         
         t_low = title.lower()
-        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "ganancia", "repunto"]):
+        
+        # Detector de Riesgo
+        if any(w in t_low for w in ["guerra", "crash", "fed", "inflación", "desplome", "urgente"]):
+            riesgo_alto = True
+
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "ganancia", "repunto", "buy"]):
             tipo_orden = "COMPRA"
-            color_borde = "#008d28" # Verde XTB
-            sl = price * 0.995 if price > 0 else 0
-            tp = price * 1.015 if price > 0 else 0
-        elif any(w in t_low for w in ["cae", "baja", "inflación", "riesgo", "caída", "pérdida"]):
+            color_xtb = "#008d28" # Verde XTB
+            sl = price - (atr_simulado * 1.5)
+            tp = price + (atr_simulado * 3.0)
+        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell", "bearish"]):
             tipo_orden = "VENTA"
-            color_borde = "#ff3131" # Rojo XTB
-            sl = price * 1.005 if price > 0 else 0
-            tp = price * 0.985 if price > 0 else 0
+            color_xtb = "#ff3131" # Rojo XTB
+            sl = price + (atr_simulado * 1.5)
+            tp = price - (atr_simulado * 3.0)
         else:
             sl, tp = price, price
 
-        # --- DISEÑO XTB (Fondo Claro, Letras Negras) ---
-        with st.expander(f"【{tipo_orden}】 {nombre_xtb} - {title[:50]}..."):
+        # --- TÍTULO CON ESTÉTICA XTB ---
+        header_label = f"┃ {tipo_orden} ┃ {nombre_xtb} ➟ {title[:55]}..."
+        
+        with st.expander(header_label):
+            # Banner de Riesgo
+            if riesgo_alto:
+                st.warning("⚠️ **AVISO DE RIESGO ALTO:** Alta volatilidad detectada en esta noticia.")
+
+            # Contenedor Principal (Fondo Claro / Texto Negro)
             st.markdown(f"""
-            <div style="background-color: {bg_card}; padding: 20px; border: 2px solid {color_borde}; border-radius: 10px; color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <span style="font-weight: 900; font-size: 1.2rem; color: {color_borde};">ACTIVO XTB: {nombre_xtb}</span>
-                    <span style="background: {color_borde}; color: white; padding: 4px 12px; border-radius: 5px; font-weight: bold;">{tipo_orden}</span>
+            <div style="background-color: #ffffff; padding: 20px; border: 1px solid #e0e0e0; border-left: 8px solid {color_xtb}; border-radius: 4px; color: #000000;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 15px;">
+                    <span style="font-weight: 800; font-size: 1.1rem; letter-spacing: 1px;">{nombre_xtb}</span>
+                    <span style="color: {color_xtb}; font-weight: 900; font-size: 1.1rem;">{tipo_orden} MARKET</span>
                 </div>
                 
-                <p style="font-size: 1rem; line-height: 1.5; color: #333;"><strong>ANÁLISIS:</strong> {summary[:300]}...</p>
+                <p style="font-size: 0.95rem; color: #333; margin-bottom: 20px;">
+                    <strong>CONTEXTO:</strong> {summary[:280]}...
+                </p>
                 
-                <div style="background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-top: 15px;">
-                    <h5 style="margin-top: 0; color: #555;">ÓRDEN SUGERIDA:</h5>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center;">
-                        <div style="border-right: 1px solid #eee;">
-                            <small style="color: #888;">VOLUMEN</small><br>
-                            <b style="font-size: 1.1rem;">0.10 Lotes</b>
-                        </div>
-                        <div style="border-right: 1px solid #eee;">
-                            <small style="color: #888;">STOP LOSS</small><br>
-                            <b style="font-size: 1.1rem; color: #ff3131;">{sl:,.2f}</b>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #eee;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; text-align: center;">
+                        <div>
+                            <div style="color: #888; font-size: 0.7rem; font-weight: bold; margin-bottom: 5px;">VOLUMEN</div>
+                            <div style="font-size: 1.1rem; font-weight: 700;">0.10 Lotes</div>
                         </div>
                         <div>
-                            <small style="color: #888;">TAKE PROFIT</small><br>
-                            <b style="font-size: 1.1rem; color: #008d28;">{tp:,.2f}</b>
+                            <div style="color: #888; font-size: 0.7rem; font-weight: bold; margin-bottom: 5px;">STOP LOSS</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: #ff3131;">{sl:,.2f}</div>
+                        </div>
+                        <div>
+                            <div style="color: #888; font-size: 0.7rem; font-weight: bold; margin-bottom: 5px;">TAKE PROFIT</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: #008d28;">{tp:,.2f}</div>
                         </div>
                     </div>
                 </div>
             </div>
-            <br>
             """, unsafe_allow_html=True)
             
-            # Botón para Telegram
-            if st.button(f"📲 Ejecutar Alerta en Telegram", key=f"xtb_btn_{i}"):
-                msg = (f"🏦 *TERMINAL XTB: {nombre_xtb}*\n"
+            # Espaciado y Botón de Acción
+            st.write("")
+            if st.button(f"🚀 EJECUTAR TICKET: {title[:20]}...", key=f"btn_xtb_{i}"):
+                msg = (f"🏦 *XTB TERMINAL: {nombre_xtb}*\n"
                        f"━━━━━━━━━━━━━━━\n"
-                       f"📍 *ORDEN:* {tipo_orden}\n"
-                       f"📊 *VOLUMEN:* 0.10\n"
-                       f"🛑 *SL:* {sl:,.2f}\n"
-                       f"🎯 *TP:* {tp:,.2f}\n"
+                       f"💎 *ACCION:* {tipo_orden}\n"
+                       f"📊 *PRECIO REF:* {price:,.2f}\n"
+                       f"🛑 *STOP LOSS:* {sl:,.2f}\n"
+                       f"🎯 *TAKE PROFIT:* {tp:,.2f}\n"
                        f"━━━━━━━━━━━━━━━\n"
-                       f"📰 {title}")
+                       f"⚠️ Riesgo: {'ALTO' if riesgo_alto else 'NORMAL'}")
                 send_telegram_alert(msg)
-                st.success("Ticket de operación enviado a Telegram")
+                st.toast("Señal enviada a XTB Mobile")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
