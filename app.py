@@ -328,194 +328,94 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 
 # =========================================================
-# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
+# BLOQUE 8: GENERADOR DE ESTRATEGIAS (CP, MP, LP)
 # =========================================================
-import random
-
-def render_sentinel_investment_cards():
+def render_strategy_cards(df):
     st.markdown("---")
-    st.subheader(f"🛡️ ESTRATEGIA TÁCTICA: {st.session_state.ticker_name}")
+    st.subheader("🎯 ESTRATEGIAS SUGERIDAS SENTINEL")
     
-    # 1. Datos dinámicos de la sesión
-    balance = st.session_state.get('wallet', 18850.00)
-    margen_libre = st.session_state.get('margen', 15200.00)
-    precio_actual = st.session_state.get('last_price', 0.0)
-    tendencia = st.session_state.get('last_trend', "NEUTRAL")
-    ticker = st.session_state.get('ticker', "").upper()
-    
-    if precio_actual == 0.0:
-        st.info("💡 Sincronizando niveles de entrada...")
+    if df is None or 'Close' not in df.columns:
+        st.warning("Esperando datos para calcular estrategias...")
         return
 
-    color = "#00ff41" if tendencia == "ALCISTA" else "#ff3131"
-    accion = "COMPRA" if tendencia == "ALCISTA" else "VENTA"
+    last_p = float(df['Close'].iloc[-1])
     
-    # 2. FACTOR DE ACTIVO (Ajuste de Nominal XTB)
-    if any(x in ticker for x in ["USD", "EUR", "GBP", "JPY"]): factor_nominal = 1.0   # Forex
-    elif any(x in ticker for x in ["GOLD", "SILVER", "OIL"]): factor_nominal = 0.05   # Materiales
-    else: factor_nominal = 0.02                                                       # Índices (US100, etc)
-
-    # 3. CONFIGURACIÓN DE CESTA (Entradas Escalonadas)
-    # Definimos 'offset' para que los precios de entrada NO sean iguales
+    # Cálculos rápidos de niveles (Simulados basados en volatilidad)
+    # CP (1:2), MP (1:3), LP (1:5)
+    atr = df['High'].iloc[-20:].max() - df['Low'].iloc[-20:].min()
+    
+    col1, col2, col3 = st.columns(3)
+    
     estrategias = [
-        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4H", "risk": 0.005, "dist": 0.004, "offset": 0.0000}, # Mercado
-        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3D", "risk": 0.008, "dist": 0.015, "offset": 0.0015}, # Limit
-        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEM", "risk": 0.012, "dist": 0.040, "offset": 0.0035} # Deep Limit
+        {"tipo": "CP", "label": "CORTO PLAZO", "dist": 0.005, "col": col1},
+        {"tipo": "MP", "label": "MEDIO PLAZO", "dist": 0.015, "col": col2},
+        {"tipo": "LP", "label": "LARGO PLAZO", "dist": 0.040, "col": col3}
     ]
 
-    cols = st.columns(3)
-
-    for i, est in enumerate(estrategias):
-        # A. Cálculo del Precio de Entrada Escalonado
-        # En compra, queremos entrar más abajo (offset negativo). En venta, más arriba.
-        if accion == "COMPRA":
-            precio_entrada = precio_actual * (1 - est['offset'])
-            tp = precio_entrada * (1 + est['dist'])
-            sl = precio_entrada * (1 - est['dist'] * 0.6)
-        else:
-            precio_entrada = precio_actual * (1 + est['offset'])
-            tp = precio_entrada * (1 - est['dist'])
-            sl = precio_entrada * (1 + est['dist'] * 0.6)
-
-        # B. Cálculo de Volumen Fraccionado (Para permitir 4 operaciones)
-        # Dividimos el riesgo para que cada operación ocupe una fracción del margen
-        riesgo_operacion = (balance * est['risk']) / 4 
-        vol_calc = (riesgo_operacion / (precio_entrada * est['dist'])) * factor_nominal
-        
-        # Límite de seguridad: máximo 0.5% del margen libre por posición
-        lotes_finales = min(vol_calc, (margen_libre * 0.005) / 100)
-        lotes_finales = max(0.01, round(lotes_finales, 2))
-
-        prob = random.randint(75, 94)
-
-        with cols[i]:
-            # HTML con Precios de Entrada Diferenciados
-            html_card = (
-                f'<div style="border: 2px solid {color}; border-radius: 10px; padding: 18px; background-color: #0d1117; min-height: 420px;">'
-                f'<h3 style="color: {color}; text-align: center; margin-top: 0;">{est["label"]}</h3>'
-                f'<p style="text-align: center; color: #888; font-size: 0.8rem; margin: 0;">({est["t"]})</p>'
-                f'<hr style="border-color: #333; margin: 12px 0;">'
-                
-                f'<div style="margin-bottom: 12px; background-color: #161b22; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #333;">'
-                f'<span style="color: #888; font-size: 0.75rem; display: block;">PRECIO DE ENTRADA</span>'
-                f'<b style="font-size: 1.25rem; color: white;">{precio_entrada:,.4f}</b>'
-                f'</div>'
-
-                f'<div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">'
-                f'<span style="color: #bbb;">ORDEN:</span><span style="color: {color}; font-weight: bold;">{accion}</span>'
-                f'</div>'
-                f'<div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 0.85rem;">'
-                f'<span style="color: #bbb;">PROBABILIDAD:</span><span style="font-weight: bold; color: white;">{prob}%</span>'
-                f'</div>'
-                
-                f'<div style="background-color: #161b22; padding: 10px; border-radius: 5px; border-left: 4px solid {color}; margin-bottom: 15px;">'
-                f'<small style="color: #888;">VOLUMEN SUGERIDO</small><br>'
-                f'<b style="font-size: 1.2rem; color: white;">{lotes_finales:.2f} LOTES</b>'
-                f'</div>'
-
-                f'<div style="font-size: 0.9rem; border-top: 1px solid #333; padding-top: 12px;">'
-                f'<p style="margin: 3px 0; color: #00ff41; display: flex; justify-content: space-between;">'
-                f'<b>TAKE PROFIT:</b> <span>{tp:,.4f}</span></p>'
-                f'<p style="margin: 3px 0; color: #ff3131; display: flex; justify-content: space-between;">'
-                f'<b>STOP LOSS:</b> <span>{sl:,.4f}</span></p>'
-                f'</div>'
-                f'</div>'
-            )
+    for est in estrategias:
+        with est["col"]:
+            sl = last_p * (1 - est["dist"])
+            tp = last_p * (1 + est["dist"] * 2)
             
-            st.markdown(html_card, unsafe_allow_html=True)
-            st.write("")
-            if st.button(f"EJECUTAR {est['label'][:1]}", key=f"btn_basket_{i}", use_container_width=True):
-                st.success(f"Cesta cargada: {lotes_finales} lotes.")
-
-render_sentinel_investment_cards()
+            # Guardamos en session_state para que el Bloque 9 los lea
+            st.session_state[f'sl_{est["tipo"]}'] = sl
+            st.session_state[f'tp_{est["tipo"]}'] = tp
+            
+            st.markdown(f"""
+            <div style="background-color: #1e1e1e; padding: 15px; border-radius: 10px; border-left: 5px solid #0066ff;">
+                <h4 style="margin:0; color: #0066ff;">{est["label"]}</h4>
+                <p style="margin:5px 0;"><b>TP:</b> {tp:,.2f}</p>
+                <p style="margin:5px 0;"><b>SL:</b> {sl:,.2f}</p>
+                <p style="font-size: 0.8rem; color: #888;">Riesgo/Ben: 1:2</p>
+            </div>
+            """, unsafe_allow_html=True)
 # =========================================================
-# BLOQUE 9: SENTINEL BRIDGE (VERSIÓN SIEMPRE VISIBLE)
+# BLOQUE 9: SENTINEL BRIDGE (XTB & REGISTRO)
 # =========================================================
 def render_sentinel_bridge():
     st.markdown("---")
-    st.subheader("🚀 SENTINEL BRIDGE: EJECUCIÓN")
-
-    # Si no hay precio aún, usamos uno genérico para no romper la app
-    current_p = st.session_state.get('last_price', 0.0)
-    ticker_actual = st.session_state.get('ticker', 'ACTIVO')
-
-    # 1. SELECTOR DE ESTRATEGIA
-    tipo_est = st.radio("MODO DE OPERACIÓN:", 
-                        ["CP (Corto)", "MP (Medio)", "LP (Largo)"], 
-                        horizontal=True, key="modo_op_v3")
-
-    # Valores sugeridos (si el Bloque 8 no los dio, ponemos 0 para editar)
-    sug_lotes = st.session_state.get('sug_lotes', 0.10)
-    sug_sl = st.session_state.get(f'sl_{tipo_est[:2]}', current_p * 0.98)
-    sug_tp = st.session_state.get(f'tp_{tipo_est[:2]}', current_p * 1.05)
-
+    st.subheader("🚀 EJECUCIÓN Y REGISTRO XTB")
+    
+    ticker = st.session_state.get('ticker', 'NQ=F')
+    last_p = st.session_state.get('last_price', 0.0)
+    
     col_xtb, col_reg = st.columns([1, 2])
-
+    
     with col_xtb:
-        st.markdown("#### 1. Ir a XTB")
-        ticker_limpio = ticker_actual.replace("-USD", "").replace("=F", "")
-        xtb_url = f"https://xstation5.xtb.com/?symbol={ticker_limpio}"
-        
-        st.link_button(f"⚡ ABRIR {ticker_limpio} EN XTB", xtb_url, use_container_width=True, type="primary")
-        
-        st.markdown("---")
-        st.write("📋 **COPIAR DATOS:**")
-        st.code(f"{sug_lotes}", language="text") # Lotes
-        st.code(f"{sug_sl:,.4f}", language="text") # SL
-        st.code(f"{sug_tp:,.4f}", language="text") # TP
+        xtb_ticker = ticker.replace("-USD", "").replace("=F", "")
+        url = f"https://xstation5.xtb.com/?symbol={xtb_ticker}"
+        st.link_button(f"⚡ ABRIR {xtb_ticker} EN XTB", url, use_container_width=True, type="primary")
+        st.caption("Copia los niveles de arriba y pégalos en tu orden.")
 
     with col_reg:
-        st.markdown("#### 2. Registro Real")
-        with st.form("registro_confirmacion_v3"):
+        with st.form("registro_xtb"):
             c1, c2 = st.columns(2)
-            with c1:
-                p_entrada = st.number_input("Precio Entrada", value=float(current_p), format="%.4f")
-                lotes_f = st.number_input("Lotes", value=float(sug_lotes), step=0.01)
-            with c2:
-                sl_f = st.number_input("Stop Loss", value=float(sug_sl), format="%.4f")
-                tp_f = st.number_input("Take Profit", value=float(sug_tp), format="%.4f")
+            p_ent = c1.number_input("Precio Entrada Real", value=last_p)
+            lotes = c1.number_input("Lotes", value=0.10, step=0.01)
+            sl_r = c2.number_input("Stop Loss Real", value=0.0)
+            tp_r = c2.number_input("Take Profit Real", value=0.0)
             
-            if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA REAL", use_container_width=True):
-                nueva_op = {
-                    "ticker": ticker_actual,
-                    "modo": tipo_est,
-                    "entrada": p_entrada,
-                    "lotes": lotes_f,
-                    "sl": sl_f,
-                    "tp": tp_f,
-                    "status": "VIGILANDO"
-                }
-                if 'active_trades' not in st.session_state:
-                    st.session_state.active_trades = []
+            if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA SENTINEL", use_container_width=True):
+                # Guardar en la lista de activos
+                nueva_op = {"ticker": ticker, "entrada": p_ent, "sl": sl_r, "tp": tp_r, "lotes": lotes, "modo": "REAL"}
+                if 'active_trades' not in st.session_state: st.session_state.active_trades = []
                 st.session_state.active_trades.append(nueva_op)
-                st.success(f"✅ Registrado. Monitor activo para {ticker_actual}")
+                st.success("Operación registrada bajo vigilancia.")
+# --- LÓGICA DE RENDERIZADO FINAL ---
+# 1. Bajamos los datos
+df_final = get_market_data(st.session_state.get('ticker', 'NQ=F'), 
+                           interval=st.session_state.get('int_top', '1h'))
 
-# =========================================================
-# LÓGICA DE UNIFICACIÓN SENTINEL (EJECUCIÓN FINAL)
-# =========================================================
-
-# 1. Obtención de datos usando el selector de temporalidad superior
-# Si 'int_top' no existe aún (primer arranque), usamos '1h'
-intervalo_actual = st.session_state.get('int_top', '1h')
-ticker_actual = st.session_state.get('ticker', 'NQ=F') # O tu selector de ticker
-
-# Ejecutamos el motor de datos
-df_mercado = get_market_data(ticker_actual, interval=intervalo_actual)
-
-if df_mercado is not None and not df_mercado.empty:
-    # --- ORDEN DE RENDERIZADO ---
+# 2. Si hay datos, mostramos TODO en orden
+if df_final is not None:
+    # Bloque 7: Gráfica (Ya lo tienes)
+    render_shielded_chart(df_final, st.session_state.ticker)
     
-    # BLOQUE 7: EL RADAR (Gráfico + EMA + RSI + Vol Bicolor)
-    # Esta función ahora devuelve el nuevo intervalo si el usuario lo cambia
-    render_shielded_chart(df_mercado, ticker_actual)
+    # Bloque 8: Estrategias sugeridas
+    render_strategy_cards(df_final)
     
-    # BLOQUE 8: ESTRATEGIAS (CP, MP, LP)
-    # Asegúrate de que tu función del Bloque 8 se llame aquí
-    # Ejemplo: render_strategy_cards(df_mercado)
+    # Bloque 9: Botón XTB y Formulario de Registro
+    render_sentinel_bridge()
     
-    # BLOQUE 9: REGISTRO XTB
-    # render_sentinel_bridge() 
-
-else:
-    st.info("💡 Sincronizando niveles de entrada y datos de mercado...")
-    st.caption("Si el mensaje persiste, intenta cambiar el activo o la temporalidad.")
+    # Bloque 10: Monitor de posiciones (si lo tienes definido)
+    # render_sentinel_monitor()
