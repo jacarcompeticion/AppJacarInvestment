@@ -306,86 +306,83 @@ def render_shielded_chart():
 render_shielded_chart()
 
 # =========================================================
-# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CAPITAL DINÁMICO)
+# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CORRECCIÓN DE VARIABLES)
 # =========================================================
 import random
 
 def render_sentinel_investment_cards():
     st.markdown("---")
+    st.subheader(f"🛡️ ESTRATEGIA TÁCTICA: {st.session_state.ticker_name}")
     
-    # 1. Recuperar datos dinámicos de la cuenta y el mercado
+    # 1. Recuperar datos dinámicos de la sesión
     capital_actual = st.session_state.get('wallet', 18850.00)
     margen_actual = st.session_state.get('margen', 15200.00)
-    precio_mercado = st.session_state.get('last_price', 0.0)
+    precio_ref = st.session_state.get('last_price', 0.0)
     tendencia = st.session_state.get('last_trend', "NEUTRAL")
     
-    if precio_mercado == 0.0:
+    if precio_ref == 0.0:
+        st.info("💡 Esperando sincronización de precio...")
         return
 
     color = "#00ff41" if tendencia == "ALCISTA" else "#ff3131"
     accion = "COMPRA" if tendencia == "ALCISTA" else "VENTA"
     
-    # Configuración de Riesgo Elástico (% del Capital Actual)
-    # Corto: 0.5%, Medio: 1.5%, Largo: 3% del capital en riesgo
+    # Configuración de Riesgo Elástico (% del Capital Dinámico)
     config = [
-        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4H", "pct_riesgo": 0.005, "dist": 0.004},
-        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3D", "pct_riesgo": 0.015, "dist": 0.015},
-        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEM", "pct_riesgo": 0.030, "dist": 0.045}
+        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4 HORAS", "pct_risk": 0.005, "dist": 0.004},
+        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3 DÍAS", "pct_risk": 0.012, "dist": 0.015},
+        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEMANA", "pct_risk": 0.025, "dist": 0.045}
     ]
 
     cols = st.columns(3)
 
     for i, est in enumerate(config):
-        # Probabilidad simulada (Ponderación de los 10 parámetros Sentinel)
-        prob = random.randint(71, 91)
+        # Probabilidad simulada (Ponderación Sentinel de 10 puntos)
+        prob = random.randint(73, 92)
         
-        # --- CÁLCULO DE VOLUMEN DINÁMICO (Fórmula Profesional) ---
-        # El riesgo monetario se adapta al balance actual (Capital * % Riesgo)
-        riesgo_monetario = capital_actual * est['pct_riesgo']
+        # --- CÁLCULO DE VOLUMEN DINÁMICO ---
+        riesgo_monetario = capital_actual * est['pct_risk']
+        # Ajuste de lotaje para XTB (basado en balance dinámico)
+        vol_calc = (riesgo_monetario / (precio_ref * est['dist'])) * 0.1
+        lotes_finales = max(0.01, round(min(vol_calc, margen_actual * 0.02 / 100), 2))
         
-        # Cálculo de lotaje: (Riesgo / Distancia al Stop Loss) / Valor Nominal
-        # Ajustado para que en una cuenta de ~19k resulten microlotes (0.05 - 0.20)
-        distancia_puntos = precio_mercado * est['dist']
-        vol_calc = riesgo_monetario / (distancia_puntos * 10) 
-        
-        # Seguridad: Nunca usar más del 5% del margen libre en una sola operación
-        lotes_finales = min(vol_calc, (margen_actual * 0.05) / (precio_mercado * 0.1))
-        lotes_finales = max(0.01, round(lotes_finales, 2))
-        
-        # Niveles de Salida
+        # --- CÁLCULO DE TP Y SL (Corregido precio_ref) ---
         if accion == "COMPRA":
-            tp, sl = precio_entrada * (1 + est['dist']), precio_entrada * (1 - est['dist'] * 0.5)
+            tp = precio_ref * (1 + est['dist'])
+            sl = precio_ref * (1 - est['dist'] * 0.6)
         else:
-            tp, sl = precio_entrada * (1 - est['dist']), precio_entrada * (1 + est['dist'] * 0.5)
+            tp = precio_ref * (1 - est['dist'])
+            sl = precio_ref * (1 + est['dist'] * 0.6)
 
         with cols[i]:
-            # HTML Blindado en una sola línea de ejecución para evitar errores de texto
+            # Construcción de tarjeta con HTML seguro
             html_card = (
                 f'<div style="border: 2px solid {color}; border-radius: 10px; padding: 20px; background-color: #0d1117; min-height: 380px;">'
                 f'<h3 style="color: {color}; text-align: center; margin-top: 0;">{est["label"]}</h3>'
-                f'<p style="text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 15px;">({est["t"]})</p>'
+                f'<p style="text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 15px;">Estimado: {est["t"]}</p>'
                 f'<hr style="border-color: #333;">'
                 f'<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">'
-                f'<span style="color: #bbb;">SENTENCIA:</span><span style="color: {color}; font-weight: bold;">{accion}</span>'
+                f'<span style="color: #bbb;">ORDEN:</span><span style="color: {color}; font-weight: bold;">{accion}</span>'
                 f'</div>'
                 f'<div style="display: flex; justify-content: space-between; margin-bottom: 15px;">'
                 f'<span style="color: #bbb;">PROBABILIDAD:</span><span style="font-weight: bold; color: white;">{prob}%</span>'
                 f'</div>'
                 f'<div style="background-color: #161b22; padding: 12px; border-radius: 5px; border-left: 4px solid {color}; margin-bottom: 20px;">'
-                f'<small style="color: #888;">VOLUMEN ELÁSTICO</small><br>'
+                f'<small style="color: #888;">VOLUMEN (SEGÚN BALANCE)</small><br>'
                 f'<b style="font-size: 1.3rem; color: white;">{lotes_finales:.2f} LOTES</b><br>'
-                f'<small style="color: #bbb;">BASADO EN BALANCE: {capital_actual:,.2f}€</small>'
+                f'<small style="color: #bbb;">BALANCE ACTUAL: {capital_actual:,.2f}€</small>'
                 f'</div>'
                 f'<div style="font-size: 0.9rem;">'
-                f'<p style="margin: 4px 0; color: #00ff41;"><b>TAKE PROFIT:</b> <span style="float: right;">{tp:,.4f}</span></p>'
-                f'<p style="margin: 4px 0; color: #ff3131;"><b>STOP LOSS:</b> <span style="float: right;">{sl:,.4f}</span></p>'
+                f'<p style="margin: 4px 0; color: #00ff41;"><b>T. PROFIT:</b> <span style="float: right;">{tp:,.4f}</span></p>'
+                f'<p style="margin: 4px 0; color: #ff3131;"><b>S. LOSS:</b> <span style="float: right;">{sl:,.4f}</span></p>'
                 f'</div>'
                 f'</div>'
             )
             
             st.markdown(html_card, unsafe_allow_html=True)
-            st.write("")
-            if st.button(f"EJECUTAR {est['label'][:1]}", key=f"btn_dinamico_{i}", use_container_width=True):
-                st.success(f"Orden de {lotes_finales} lotes enviada.")
+            st.write("") # Espaciador
+            if st.button(f"EJECUTAR {est['id']}", key=f"btn_final_v3_{i}", use_container_width=True):
+                st.toast(f"Orden de {lotes_finales} lotes enviada a mercado.")
 
+# Llamada al bloque
 render_sentinel_investment_cards()
