@@ -536,8 +536,8 @@ def render_sentinel_news(ticker):
             color_impacto = "#ff3131"
             accion = "BUSCAR VENTA"
 
-        # Bloque visual de la noticia
-        with st.container():
+       # --- BLOQUE VISUAL (Dentro del bucle for) ---
+    with st.container():
             st.markdown(f"""
             <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
                 <div style="display: flex; justify-content: space-between;">
@@ -554,46 +554,39 @@ def render_sentinel_news(ticker):
             </div>
             """, unsafe_allow_html=True)
 
-        # Alerta Telegram
-        if impacto != "NEUTRAL":
+        # --- ALERTA TELEGRAM (DEBE TENER LA MISMA SANGRÍA QUE 'WITH') ---
+    if impacto != "NEUTRAL":
             alert_key = f"alert_{news.get('uuid')}"
             if alert_key not in st.session_state:
-                send_telegram_alert(f"🚨 SENTINEL: {ticker}\\n{title}\\nImpacto: {impacto}")
+                # Nota: Usamos un solo \n para el mensaje de Telegram
+                send_telegram_alert(f"🚨 SENTINEL: {ticker}\n{title}\nImpacto: {impacto}")
                 st.session_state[alert_key] = True
 # =========================================================
-# ORQUESTADOR FINAL (EL MOTOR QUE ACTIVA EL RADAR)
+# ORQUESTADOR FINAL CORREGIDO
 # =========================================================
 
-# 1. Determinamos qué activo y qué tiempo mirar
+# 1. Identificamos el activo y el intervalo
 t_final = st.session_state.get('ticker', 'NQ=F')
-# Recuperamos el intervalo del selector del Bloque 7 (por defecto 1h)
 i_final = st.session_state.get('int_top', '1h')
 
-# 2. Descargamos los datos usando tu Bloque 6
-df_final = get_market_data(t_final, interval=i_final)
-
-if df_final is not None and not df_final.empty:
-    # --- PROCESAMIENTO ADICIONAL PARA EL VOLUMEN ---
-    # Creamos el color del volumen (Verde si sube, Rojo si baja)
-    df_final['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' 
-                             for c, o in zip(df_final['Close'], df_final['Open'])]
-    
-    # Guardamos el último precio en el estado para las métricas
-    st.session_state.last_price = float(df_final['Close'].iloc[-1])
-
-    # 3. LANZAMOS LOS COMPONENTES EN ORDEN
-    # Solo mostramos esto si estamos en la vista de "Lobo" o "Predicciones"
-    if st.session_state.view in ["Lobo", "Predicciones"]:
-        render_shielded_chart(df_final, t_final)  # Bloque 7: La Gráfica
-        render_strategy_cards(df_final)           # Bloque 8: Las Tarjetas
-        render_sentinel_bridge()                  # Bloque 9: El Formulario
-else:
-    st.error("📡 Error de conexión: No se han podido recibir datos de Yahoo Finance.")
-    if st.session_state.view == "Noticias":
+# 2. CASO A: SI ESTAMOS EN LA PESTAÑA DE NOTICIAS
+if st.session_state.view == "Noticias":
     render_sentinel_news(t_final)
-elif st.session_state.view in ["Lobo", "Predicciones"]:
-    render_shielded_chart(df_final, t_final)
-    render_strategy_cards(df_final)
-    render_sentinel_bridge()
 
+# 3. CASO B: SI ESTAMOS EN PESTAÑAS QUE REQUIEREN GRÁFICOS (Lobo / Predicciones)
+elif st.session_state.view in ["Lobo", "Predicciones"]:
+    df_final = get_market_data(t_final, interval=i_final)
+    
+    if df_final is not None and not df_final.empty:
+        # Procesamiento de color de volumen
+        df_final['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' 
+                                 for c, o in zip(df_final['Close'], df_final['Open'])]
+        st.session_state.last_price = float(df_final['Close'].iloc[-1])
+        
+        # Renderizamos los bloques técnicos
+        render_shielded_chart(df_final, t_final)
+        render_strategy_cards(df_final)
+        render_sentinel_bridge()
+    else:
+        st.error("📡 Error de conexión: No se han podido recibir datos de mercado.")
 
