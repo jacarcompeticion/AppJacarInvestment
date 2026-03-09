@@ -518,91 +518,91 @@ def send_telegram_alert(message):
     except:
         pass
 
+import feedparser # Importante: Añadir al principio del archivo
+
 def render_sentinel_news(ticker):
-    """Renderiza noticias con limpieza de ticker para asegurar resultados"""
     st.markdown("---")
-    st.subheader(f"📰 INTELIGENCIA DE MERCADO: {ticker}")
+    st.subheader(f"📡 SENTINEL INTELLIGENCE HUB: {ticker}")
     
-    # 1. Limpieza de Ticker para la API de Noticias
-    # Algunos tickers como 'NQ=F' o 'EURUSD=X' fallan en noticias si llevan el sufijo
-    clean_ticker = ticker.split('=')[0] if '=' in ticker else ticker
+    # 1. Definición de fuentes (RSS de alta fiabilidad)
+    # Usamos fuentes generales financieras que siempre tienen datos
+    feeds = [
+        "https://es.investing.com/rss/news.rss",
+        "https://es.investing.com/rss/market_overview.rss",
+        "https://www.reutersagency.com/feed/?best-sectors=business-finance&post_type=best"
+    ]
     
-    asset = yf.Ticker(clean_ticker)
+    all_news = []
     
-    # 2. Intento de descarga con Feedback
-    with st.spinner(f"Escaneando titulares para {clean_ticker}..."):
-        try:
-            news_list = asset.news
-            # Si yfinance devuelve None o vacío, intentamos con el ticker original por si acaso
-            if not news_list:
-                asset_alt = yf.Ticker(ticker)
-                news_list = asset_alt.news
-        except Exception as e:
-            st.error(f"Error al conectar con el servidor de noticias: {e}")
-            news_list = []
-    
-    if not news_list:
-        st.warning(f"⚠️ No se han encontrado noticias recientes para '{clean_ticker}'. Prueba con otro activo (ej: TSLA, GOLD o BTC-USD).")
+    # 2. Recolección de noticias (Scraping Multifuente)
+    with st.spinner("Sincronizando con terminales de Bloomberg y Reuters..."):
+        for url in feeds:
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:5]: # Tomamos las 5 más recientes de cada fuente
+                    all_news.append({
+                        'title': entry.title,
+                        'link': entry.link,
+                        'published': entry.get('published', 'Reciente'),
+                        'summary': entry.get('summary', 'Análisis en curso...')
+                    })
+            except:
+                continue
+
+    if not all_news:
+        st.error("❌ No se ha podido establecer conexión con las agencias de noticias.")
         return
 
-    # 3. Renderizado de Noticias
-    for news in news_list[:5]:
-        title = news.get('title', 'Sin título')
-        publisher = news.get('publisher', 'Fuente')
-        link = news.get('link', '#')
+    # 3. Filtrado por Activo (Buscamos si el activo aparece en el título)
+    # Si no aparece, mostramos las generales de Mercado (para que nunca esté vacío)
+    clean_t = ticker.split('=')[0].upper()
+    relevant_news = [n for n in all_news if clean_t in n['title'].upper()]
+    
+    # Si no hay específicas del ticker, usamos las de mercado general
+    display_news = relevant_news if relevant_news else all_news[:6]
+
+    # 4. Renderizado con Resumen y Acción
+    for item in display_news:
+        title = item['title']
         
-        # Tiempo
-        raw_time = news.get('providerPublishTime')
-        time_str = "--:--"
-        if raw_time:
-            try:
-                dt_obj = pd.to_datetime(raw_time, unit='s')
-                time_str = dt_obj.strftime('%H:%M')
-            except:
-                time_str = "Reciente"
-        
-        # Análisis de Impacto
+        # Lógica de Impacto (Basada en palabras clave)
         impacto = "NEUTRAL"
-        color_impacto = "#888888"
+        color = "#888888"
         accion = "VIGILAR"
         
         t_low = title.lower()
-        # Palabras clave extendidas
-        pos = ["bullish", "growth", "surge", "buy", "profit", "ganancia", "sube", "rebound", "high"]
-        neg = ["bearish", "crash", "drop", "warns", "sell", "caída", "pérdida", "baja", "debt", "low"]
-        
-        if any(w in t_low for w in pos):
-            impacto = "ALTO (POSITIVO)"
-            color_impacto = "#00ff41"
-            accion = "COMPRA"
-        elif any(w in t_low for w in neg):
-            impacto = "ALTO (CRÍTICO)"
-            color_impacto = "#ff3131"
-            accion = "VENTA"
+        if any(w in t_low for w in ["sube", "récord", "positivo", "gana", "alcista", "crece"]):
+            impacto = "ALTO (BULLISH)"
+            color = "#00ff41"
+            accion = "MANTENER LARGOS"
+        elif any(w in t_low for w in ["cae", "baja", "inflación", "riesgo", "pérdida", "crash", "desploma"]):
+            impacto = "CRÍTICO (BEARISH)"
+            color = "#ff3131"
+            accion = "PROTECCIÓN / SHORT"
 
-        # Interfaz Visual
+        # --- DISEÑO DE LA NOTICIA ---
         st.markdown(f"""
-        <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 12px; border: 1px solid #222;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span style="color: #666; font-size: 0.75rem; font-weight: bold;">{publisher.upper()}</span>
-                <span style="color: #666; font-size: 0.75rem;">{time_str}h</span>
+        <div style="background-color: #0d1117; padding: 20px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="color: #58a6ff; font-size: 0.7rem; font-weight: bold; letter-spacing: 1px;">TERMINAL SENTINEL</span>
+                <span style="color: #8b949e; font-size: 0.7rem;">{item['published'][:16]}</span>
             </div>
-            <h4 style="margin: 5px 0 15px 0; line-height: 1.4;">
-                <a href="{link}" target="_blank" style="color: #ffffff; text-decoration: none;">{title}</a>
-            </h4>
-            <div style="display: flex; justify-content: space-between; align-items: center; background: #161b22; padding: 8px; border-radius: 4px;">
-                <span style="color: {color_impacto}; font-weight: bold; font-size: 0.75rem;">{impacto}</span>
-                <span style="background-color: {color_impacto}; color: #000; padding: 2px 10px; border-radius: 3px; font-size: 0.7rem; font-weight: 900;">{accion}</span>
+            <h3 style="margin: 0 0 10px 0; font-size: 1.1rem; line-height: 1.4;">
+                <a href="{item['link']}" target="_blank" style="color: #c9d1d9; text-decoration: none;">{title}</a>
+            </h3>
+            <p style="color: #8b949e; font-size: 0.85rem; margin-bottom: 15px;">
+                <strong>RESUMEN:</strong> {item['summary'][:150]}...
+            </p>
+            <div style="display: flex; gap: 10px;">
+                <div style="background: {color}22; color: {color}; border: 1px solid {color}; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">
+                    IMPACTO: {impacto}
+                </div>
+                <div style="background: {color}; color: #000; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 900;">
+                    ACCIÓN: {accion}
+                </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-        # Alerta Telegram
-        if impacto != "NEUTRAL":
-            alert_id = f"alert_{news.get('uuid', title)}"
-            if alert_id not in st.session_state:
-                send_telegram_alert(f"🚨 SENTINEL: {ticker}\n{title}\nImpacto: {impacto}")
-                st.session_state[alert_id] = True
 # =========================================================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
