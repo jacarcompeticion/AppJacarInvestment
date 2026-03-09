@@ -494,3 +494,33 @@ def render_sentinel_bridge():
                 if st.button(f"Eliminar Vigilancia {i}", key=f"del_{i}"):
                     st.session_state.active_trades.pop(i)
                     st.rerun()
+
+# =========================================================
+# ORQUESTADOR FINAL (EL MOTOR QUE ACTIVA EL RADAR)
+# =========================================================
+
+# 1. Determinamos qué activo y qué tiempo mirar
+t_final = st.session_state.get('ticker', 'NQ=F')
+# Recuperamos el intervalo del selector del Bloque 7 (por defecto 1h)
+i_final = st.session_state.get('int_top', '1h')
+
+# 2. Descargamos los datos usando tu Bloque 6
+df_final = get_market_data(t_final, interval=i_final)
+
+if df_final is not None and not df_final.empty:
+    # --- PROCESAMIENTO ADICIONAL PARA EL VOLUMEN ---
+    # Creamos el color del volumen (Verde si sube, Rojo si baja)
+    df_final['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' 
+                             for c, o in zip(df_final['Close'], df_final['Open'])]
+    
+    # Guardamos el último precio en el estado para las métricas
+    st.session_state.last_price = float(df_final['Close'].iloc[-1])
+
+    # 3. LANZAMOS LOS COMPONENTES EN ORDEN
+    # Solo mostramos esto si estamos en la vista de "Lobo" o "Predicciones"
+    if st.session_state.view in ["Lobo", "Predicciones"]:
+        render_shielded_chart(df_final, t_final)  # Bloque 7: La Gráfica
+        render_strategy_cards(df_final)           # Bloque 8: Las Tarjetas
+        render_sentinel_bridge()                  # Bloque 9: El Formulario
+else:
+    st.error("📡 Error de conexión: No se han podido recibir datos de Yahoo Finance.")
