@@ -518,92 +518,85 @@ def send_telegram_alert(message):
     except:
         pass
 
-import feedparser # Importante: Añadir al principio del archivo
+import feedparser
 
 def render_sentinel_news(ticker):
-    st.markdown("---")
-    st.subheader(f"📡 SENTINEL INTELLIGENCE HUB: {ticker}")
+    st.markdown(f"### 📡 GENERADOR DE SEÑALES: {ticker}")
     
-    # 1. Definición de fuentes (RSS de alta fiabilidad)
-    # Usamos fuentes generales financieras que siempre tienen datos
-    feeds = [
-        "https://es.investing.com/rss/news.rss",
-        "https://es.investing.com/rss/market_overview.rss",
-        "https://www.reutersagency.com/feed/?best-sectors=business-finance&post_type=best"
-    ]
-    
-    all_news = []
-    
-    # 2. Recolección de noticias (Scraping Multifuente)
-    with st.spinner("Sincronizando con terminales de Bloomberg y Reuters..."):
-        for url in feeds:
-            try:
-                feed = feedparser.parse(url)
-                for entry in feed.entries[:5]: # Tomamos las 5 más recientes de cada fuente
-                    all_news.append({
-                        'title': entry.title,
-                        'link': entry.link,
-                        'published': entry.get('published', 'Reciente'),
-                        'summary': entry.get('summary', 'Análisis en curso...')
-                    })
-            except:
-                continue
+    # 1. Fuentes de Inteligencia
+    feeds = ["https://es.investing.com/rss/news.rss", "https://es.investing.com/rss/market_overview.rss"]
+    all_entries = []
+    for url in feeds:
+        try:
+            f = feedparser.parse(url)
+            all_entries.extend(f.entries[:8])
+        except: continue
 
-    if not all_news:
-        st.error("❌ No se ha podido establecer conexión con las agencias de noticias.")
+    if not all_entries:
+        st.warning("Esperando sincronización con agencias...")
         return
 
-    # 3. Filtrado por Activo (Buscamos si el activo aparece en el título)
-    # Si no aparece, mostramos las generales de Mercado (para que nunca esté vacío)
-    clean_t = ticker.split('=')[0].upper()
-    relevant_news = [n for n in all_news if clean_t in n['title'].upper()]
-    
-    # Si no hay específicas del ticker, usamos las de mercado general
-    display_news = relevant_news if relevant_news else all_news[:6]
-
-    # 4. Renderizado con Resumen y Acción
-    for item in display_news:
-        title = item['title']
+    # 2. PROCESAMIENTO DE SEÑALES
+    for i, entry in enumerate(all_entries):
+        title = entry.title
+        summary = entry.get('summary', 'Sin detalles adicionales.')
         
-        # Lógica de Impacto (Basada en palabras clave)
-        impacto = "NEUTRAL"
-        color = "#888888"
-        accion = "VIGILAR"
-        
+        # Lógica de Decisión (Sentimiento)
+        tipo_orden = "OBSERVAR"
+        color_card = "#888888"
         t_low = title.lower()
-        if any(w in t_low for w in ["sube", "récord", "positivo", "gana", "alcista", "crece"]):
-            impacto = "ALTO (BULLISH)"
-            color = "#00ff41"
-            accion = "MANTENER LARGOS"
-        elif any(w in t_low for w in ["cae", "baja", "inflación", "riesgo", "pérdida", "crash", "desploma"]):
-            impacto = "CRÍTICO (BEARISH)"
-            color = "#ff3131"
-            accion = "PROTECCIÓN / SHORT"
+        
+        # Parámetros de la Señal (Simulados basados en el precio actual)
+        price = st.session_state.get('last_price', 0.0)
+        
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "récord"]):
+            tipo_orden = "COMPRAR"
+            color_card = "#00ff41"
+            sl = price * 0.995 # SL al 0.5%
+            tp = price * 1.015 # TP al 1.5%
+        elif any(w in t_low for w in ["cae", "baja", "inflación", "riesgo", "caída"]):
+            tipo_orden = "VENDER"
+            color_card = "#ff3131"
+            sl = price * 1.005
+            tp = price * 0.985
+        
+        # --- DISEÑO DE TARJETA DESPLEGABLE ---
+        with st.expander(f"{tipo_orden} {ticker} | {title[:60]}..."):
+            st.markdown(f"""
+            <div style="border-left: 5px solid {color_card}; padding-left: 15px; margin-bottom: 20px;">
+                <p style="color: #8b949e; font-size: 0.9rem;">{summary}</p>
+                <hr style="border-color: #333;">
+                <h4 style="color: {color_card};">ACCIONES A TOMAR:</h4>
+                <p><strong>Estrategia:</strong> {tipo_orden} si el precio confirma tendencia en {time_str if 'time_str' in locals() else 'M15'}</p>
+                <table style="width: 100%; color: white; background: #161b22; border-radius: 5px;">
+                    <tr>
+                        <td style="padding: 10px;"><b>VOLUMEN:</b> 0.10 Lotes</td>
+                        <td style="padding: 10px;"><b>STOP LOSS:</b> {sl:,.2f}</td>
+                        <td style="padding: 10px;"><b>TAKE PROFIT:</b> {tp:,.2f}</td>
+                    </tr>
+                </table>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Botón para disparar la alerta manualmente o confirmar
+            if st.button(f"Enviar Señal a Telegram", key=f"btn_{i}"):
+                msg = (f"🚀 *NUEVA SEÑAL SENTINEL*\n\n"
+                       f"Activo: {ticker}\n"
+                       f"Orden: {tipo_orden}\n"
+                       f"Volumen: 0.10\n"
+                       f"SL: {sl:,.2f}\n"
+                       f"TP: {tp:,.2f}\n"
+                       f"Basado en: {title}")
+                send_telegram_alert(msg)
+                st.success("Alerta enviada al terminal móvil.")
 
-        # --- DISEÑO DE LA NOTICIA ---
-        st.markdown(f"""
-        <div style="background-color: #0d1117; padding: 20px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 15px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <span style="color: #58a6ff; font-size: 0.7rem; font-weight: bold; letter-spacing: 1px;">TERMINAL SENTINEL</span>
-                <span style="color: #8b949e; font-size: 0.7rem;">{item['published'][:16]}</span>
-            </div>
-            <h3 style="margin: 0 0 10px 0; font-size: 1.1rem; line-height: 1.4;">
-                <a href="{item['link']}" target="_blank" style="color: #c9d1d9; text-decoration: none;">{title}</a>
-            </h3>
-            <p style="color: #8b949e; font-size: 0.85rem; margin-bottom: 15px;">
-                <strong>RESUMEN:</strong> {item['summary'][:150]}...
-            </p>
-            <div style="display: flex; gap: 10px;">
-                <div style="background: {color}22; color: {color}; border: 1px solid {color}; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">
-                    IMPACTO: {impacto}
-                </div>
-                <div style="background: {color}; color: #000; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 900;">
-                    ACCIÓN: {accion}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-# =========================================================
+        # ALERTA AUTOMÁTICA (Solo si es Crítica y no se ha enviado)
+        if tipo_orden != "OBSERVAR":
+            alert_id = f"auto_{entry.get('id', title)}"
+            if alert_id not in st.session_state:
+                msg_auto = f"🚨 *ALERTA AUTOMÁTICA*\n{ticker}: {tipo_orden}\nSL: {sl:,.2f} | TP: {tp:,.2f}"
+                send_telegram_alert(msg_auto)
+                st.session_state[alert_id] = True=================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
 
