@@ -596,7 +596,8 @@ def render_sentinel_news(ticker):
             if alert_id not in st.session_state:
                 msg_auto = f"🚨 *ALERTA AUTOMÁTICA*\n{ticker}: {tipo_orden}\nSL: {sl:,.2f} | TP: {tp:,.2f}"
                 send_telegram_alert(msg_auto)
-                st.session_state[alert_id] = True=================
+                st.session_state[alert_id] = True
+# =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
 
