@@ -409,63 +409,77 @@ def render_sentinel_investment_cards():
 
 render_sentinel_investment_cards()
 # =========================================================
-# BLOQUE 9: SENTINEL BRIDGE - EJECUCIÓN Y REGISTRO REAL
+# BLOQUE 9: SENTINEL BRIDGE - REGISTRO TÁCTICO
 # =========================================================
+import pandas as pd
+import time
+
 def render_sentinel_bridge():
     st.markdown("---")
-    st.subheader("🚀 EJECUCIÓN Y REGISTRO DE ÓRDENES")
-    
-    # Verificamos si hay una sugerencia activa del Bloque 8
+    st.subheader("🚀 SENTINEL BRIDGE: EJECUCIÓN")
+
+    # Recuperar datos de la sugerencia del Bloque 8 (si existen)
+    # Asumimos que el Bloque 8 guardó una lista 'sugerencias_activas'
     if 'last_price' not in st.session_state:
-        st.info("💡 Selecciona un activo y genera una estrategia para habilitar el registro.")
+        st.info("💡 Analiza un activo primero para habilitar el puente de ejecución.")
         return
 
-    # Usamos una columna para el link y otra para el formulario
-    col_link, col_form = st.columns([1, 2])
+    # 1. SELECTOR DE ESTRATEGIA PARA AUTORRELLENO
+    tipo_est = st.radio("SELECCIONA ESTRATEGIA A EJECUTAR:", 
+                        ["CORTO PLAZO (CP)", "MEDIO PLAZO (MP)", "LARGO PLAZO (LP)"], 
+                        horizontal=True)
 
-    with col_link:
-        st.markdown("#### 1. Salto a XTB")
-        # Limpiamos el ticker para XTB
+    # Lógica de autorrelleno (basada en los cálculos del Bloque 8)
+    # Aquí simulamos la recuperación de esos datos
+    sug_lotes = st.session_state.get('sug_lotes', 0.01)
+    sug_sl = st.session_state.get(f'sl_{tipo_est[:2]}', 0.0)
+    sug_tp = st.session_state.get(f'tp_{tipo_est[:2]}', 0.0)
+
+    col_xtb, col_reg = st.columns([1, 2])
+
+    with col_xtb:
+        st.markdown("#### 1. Lanzar en XTB")
         xtb_ticker = st.session_state.ticker.replace("-USD", "").replace("=F", "")
         xtb_url = f"https://xstation5.xtb.com/?symbol={xtb_ticker}"
         
-        st.markdown(f"""
-            <a href="{xtb_url}" target="_blank" style="text-decoration: none;">
-                <div style="background-color: #ffaa00; color: black; text-align: center; 
-                padding: 20px; border-radius: 10px; font-weight: bold; border: 2px solid #e69900;">
-                    ⚡ ABRIR {xtb_ticker} EN XTB<br>
-                    <span style="font-size: 0.7rem; font-weight: normal;">(Abre xStation en una nueva pestaña)</span>
-                </div>
-            </a>
-        """, unsafe_allow_html=True)
-        st.caption("⚠️ Recuerda: Ejecuta la orden en XTB y vuelve aquí para registrar los datos exactos.")
+        st.link_button(f"⚡ ABRIR {xtb_ticker}", xtb_url, use_container_width=True, type="primary")
+        
+        st.markdown("---")
+        st.markdown("**📋 PORTAPAPELES RÁPIDO**")
+        # Botones de copiado simulados (Streamlit no tiene 'copy to clipboard' nativo fácil, 
+        # pero mostramos los valores listos para seleccionar)
+        st.code(f"Lotes: {sug_lotes}", language=None)
+        st.code(f"SL: {sug_sl:,.4f}", language=None)
+        st.code(f"TP: {sug_tp:,.4f}", language=None)
 
-    with col_form:
-        st.markdown("#### 2. Registro de Operación Real")
-        with st.form("registro_operacion"):
+    with col_reg:
+        st.markdown("#### 2. Registro de Confirmación")
+        with st.form("registro_real_pro"):
             c1, c2 = st.columns(2)
             with c1:
-                p_real = st.number_input("Precio Entrada Real", value=st.session_state.last_price, format="%.4f")
-                v_real = st.number_input("Lotes Ejecutados", value=0.01, step=0.01)
+                p_entrada = st.number_input("Precio Real de Entrada", value=st.session_state.last_price, format="%.4f")
+                lotes = st.number_input("Lotes Reales", value=sug_lotes, step=0.01)
             with c2:
-                sl_real = st.number_input("Stop Loss Real", value=0.0, format="%.4f")
-                tp_real = st.number_input("Take Profit Real", value=0.0, format="%.4f")
+                sl = st.number_input("Stop Loss Real", value=sug_sl, format="%.4f")
+                tp = st.number_input("Take Profit Real", value=sug_tp, format="%.4f")
             
-            submit = st.form_submit_button("🛰️ ACTIVAR VIGILANCIA SENTINEL", use_container_width=True)
+            comentario = st.text_input("Nota (opcional)", placeholder="Ej: Entré un poco tarde por volatilidad")
             
-            if submit:
-                # Guardamos la operación en el estado de la sesión
+            if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA REAL", use_container_width=True):
                 nueva_op = {
                     "ticker": st.session_state.ticker,
-                    "entrada": p_real,
-                    "lotes": v_real,
-                    "sl": sl_real,
-                    "tp": tp_real,
+                    "estrategia": tipo_est,
+                    "entrada": p_entrada,
+                    "lotes": lotes,
+                    "sl": sl,
+                    "tp": tp,
+                    "inicio": pd.Timestamp.now(),
                     "status": "ABIERTA"
                 }
                 if 'active_trades' not in st.session_state:
                     st.session_state.active_trades = []
                 st.session_state.active_trades.append(nueva_op)
-                st.success(f"✅ {st.session_state.ticker} registrado correctamente. Iniciando monitorización...")
+                st.success(f"✅ Operación {tipo_est} registrada. Monitorizando en tiempo real.")
 
+render_sentinel_intelligence()
 render_sentinel_bridge()
