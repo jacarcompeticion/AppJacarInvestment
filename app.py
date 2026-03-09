@@ -418,58 +418,65 @@ def render_sentinel_bridge():
 
     ticker_actual = st.session_state.get('ticker', 'NQ=F')
     
-    # 1. DEFINICIÓN DE MULTIPLICADORES XTB (Valor de contrato)
-    # Estos valores son los estándar para cuentas Standard de XTB
-    if "=X" in ticker_actual: # FOREX
+    # 1. MATRIZ DE MULTIPLICADORES XTB (VALOR DE CONTRATO)
+    # Ajustamos según las especificaciones de X-Station 5
+    if any(x in ticker_actual for x in ["CL=F", "BZ=F", "OIL", "NG=F"]): # PETRÓLEO Y GAS
+        prec = 3 if "NG" in ticker_actual else 2
+        step_val = 0.01
+        multiplier = 1000  # 1 Lote = 1,000 Barriles
+    elif "=X" in ticker_actual: # FOREX
         prec = 5
         step_val = 0.0001
-        multiplier = 100000 
-    elif "GC=F" in ticker_actual or "GOLD" in ticker_actual: # ORO
+        multiplier = 100000 # 1 Lote = 100,000 Unidades
+    elif any(x in ticker_actual for x in ["GC=F", "GOLD"]): # ORO
         prec = 2
         step_val = 0.10
-        multiplier = 100 
-    elif "NQ=F" in ticker_actual or "ES=F" in ticker_actual: # ÍNDICES USA
+        multiplier = 100 # 1 Lote = 100 Onzas
+    elif any(x in ticker_actual for x in ["NQ=F", "ES=F", "YM=F", "RTY=F"]): # ÍNDICES USA
         prec = 2
         step_val = 0.25
-        multiplier = 20 # Valor por punto en XTB para US100
+        # NOTA: En XTB US100/US500 suele ser x20 o x50 según contrato. 
+        # Si ves que no cuadra, ajusta este número:
+        multiplier = 20 
     elif "BTC" in ticker_actual: # CRYPTO
         prec = 2
         step_val = 1.0
         multiplier = 1
-    else: # Por defecto (Stocks o similares)
+    else: # ACCIONES Y OTROS
         prec = 2
         step_val = 0.01
         multiplier = 1
 
-    # 2. Recuperamos valores
+    # 2. Recuperación de valores de sesión
     sl_sug = st.session_state.get('sl_final', 0.0)
     tp_sug = st.session_state.get('tp_final', 0.0)
     ent_sug = st.session_state.get('ent_final', st.session_state.get('last_price', 0.0))
     lotes_sug = st.session_state.get('lotes_final', 0.10)
 
-    # 3. INTERFAZ
-    with st.form("registro_operacion_sentinel"):
+    # 3. INTERFAZ DE CÁLCULO
+    with st.form("registro_operacion_sentinel_v3"):
         col_inputs, col_monetary = st.columns([2, 1])
         
         with col_inputs:
             c1, c2, c3 = st.columns(3)
-            ent_real = c1.number_input("Entrada", value=float(ent_sug), format=f"%.{prec}f", step=step_val)
-            lotes_real = c1.number_input("Lotes XTB", value=float(lotes_sug), step=0.01)
-            sl_real = c2.number_input("Stop Loss", value=float(sl_real if 'sl_real' in locals() else sl_sug), format=f"%.{prec}f", step=step_val)
-            tp_real = c3.number_input("Take Profit", value=float(tp_real if 'tp_real' in locals() else tp_sug), format=f"%.{prec}f", step=step_val)
+            ent_real = c1.number_input("Precio Entrada", value=float(ent_sug), format=f"%.{prec}f", step=step_val)
+            lotes_real = c1.number_input("Volumen (Lotes)", value=float(lotes_sug), step=0.01)
+            sl_real = c2.number_input("Stop Loss", value=float(sl_sug), format=f"%.{prec}f", step=step_val)
+            tp_real = c3.number_input("Take Profit", value=float(tp_sug), format=f"%.{prec}f", step=step_val)
 
-        # --- LÓGICA DE CÁLCULO PRECISA ---
-        # Ganancia/Pérdida = (Diferencia Precio) * Lotes * Multiplicador
-        pnl_sl = abs(ent_real - sl_real) * lotes_real * multiplier
-        pnl_tp = abs(tp_real - ent_real) * lotes_real * multiplier
+        # --- LÓGICA DE CÁLCULO REAL ---
+        # El PnL se calcula: (Diferencia de precio) * Lotes * Multiplicador de Contrato
+        riesgo_dinero = abs(ent_real - sl_real) * lotes_real * multiplier
+        beneficio_dinero = abs(tp_real - ent_real) * lotes_real * multiplier
         
         with col_monetary:
+            # Mostramos el cálculo visualmente
             st.markdown(f"""
             <div style="background-color: #0d1117; padding: 15px; border-radius: 10px; border: 1px solid #333; text-align:center;">
-                <p style="margin:0; color:#888; font-size:0.8rem;">ESTIMACIÓN XTB</p>
-                <h3 style="margin:10px 0; color:#ff3131;">-{pnl_sl:,.2f}€</h3>
-                <h3 style="margin:10px 0; color:#00ff41;">+{pnl_tp:,.2f}€</h3>
-                <p style="margin:0; color:#888; font-size:0.7rem;">Valor Contrato: {multiplier:,.0f}</p>
+                <p style="margin:0; color:#888; font-size:0.8rem;">PROYECCIÓN MONETARIA</p>
+                <h3 style="margin:10px 0; color:#ff3131;">-{riesgo_dinero:,.2f}€</h3>
+                <h3 style="margin:10px 0; color:#00ff41;">+{beneficio_dinero:,.2f}€</h3>
+                <p style="margin:0; color:#555; font-size:0.7rem;">Contrato: {multiplier} uds/lote</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -477,6 +484,7 @@ def render_sentinel_bridge():
             st.session_state.active_trades.append({
                 "ticker": ticker_actual, "entrada": ent_real, "sl": sl_real, "tp": tp_real, "lotes": lotes_real
             })
+            st.success(f"Vigilando {ticker_actual}. Riesgo: {riesgo_dinero:,.2f}€")
             st.rerun()
 # =========================================================
 # ORQUESTADOR FINAL (EL MOTOR QUE ACTIVA EL RADAR)
