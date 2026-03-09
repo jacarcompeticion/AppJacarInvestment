@@ -542,8 +542,8 @@ def render_sentinel_news(ticker):
             accion = "REDUCIR EXPOSICIÓN / BUSCAR SHORT"
 
         # 3. RENDERIZADO EN UI
-       with st.container():
-    st.markdown(f"""
+  with st.container():
+           st.markdown(f"""
     <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
         <div style="display: flex; justify-content: space-between;">
             <small style="color: #666;">{publisher}</small>
