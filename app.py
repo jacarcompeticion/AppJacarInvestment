@@ -328,79 +328,108 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 
 # =========================================================
-# BLOQUE 8: GENERADOR DE ESTRATEGIAS (CP, MP, LP)
+# BLOQUE 8: ESTRATEGIAS DINÁMICAS (COMPRA/VENTA)
 # =========================================================
 def render_strategy_cards(df):
     st.markdown("---")
     st.subheader("🎯 ESTRATEGIAS SUGERIDAS SENTINEL")
     
-    if df is None or 'Close' not in df.columns:
-        st.warning("Esperando datos para calcular estrategias...")
+    if df is None or 'EMA_20' not in df.columns:
+        st.warning("Calculando indicadores de tendencia...")
         return
 
     last_p = float(df['Close'].iloc[-1])
+    ema_v = float(df['EMA_20'].iloc[-1])
     
-    # Cálculos rápidos de niveles (Simulados basados en volatilidad)
-    # CP (1:2), MP (1:3), LP (1:5)
-    atr = df['High'].iloc[-20:].max() - df['Low'].iloc[-20:].min()
+    # 1. DETECCIÓN DE SENTIDO (Compra si precio > EMA, Venta si precio < EMA)
+    es_compra = last_p > ema_v
+    color_base = "#00ff41" if es_compra else "#ff3131"
+    label_sentido = "COMPRA (LONG)" if es_compra else "VENTA (SHORT)"
+    
+    # 2. CONFIGURACIÓN DE DISTANCIAS (Ajustadas por volatilidad reciente)
+    atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
     
     col1, col2, col3 = st.columns(3)
     
-    estrategias = [
-        {"tipo": "CP", "label": "CORTO PLAZO", "dist": 0.005, "col": col1},
-        {"tipo": "MP", "label": "MEDIO PLAZO", "dist": 0.015, "col": col2},
-        {"tipo": "LP", "label": "LARGO PLAZO", "dist": 0.040, "col": col3}
+    # Configuración de las 3 temporalidades
+    config = [
+        {"id": "CP", "nombre": "CORTO PLAZO", "mult": 1.5, "col": col1},
+        {"id": "MP", "nombre": "MEDIO PLAZO", "mult": 3.0, "col": col2},
+        {"id": "LP", "nombre": "LARGO PLAZO", "mult": 6.0, "col": col3}
     ]
 
-    for est in estrategias:
-        with est["col"]:
-            sl = last_p * (1 - est["dist"])
-            tp = last_p * (1 + est["dist"] * 2)
-            
-            # Guardamos en session_state para que el Bloque 9 los lea
-            st.session_state[f'sl_{est["tipo"]}'] = sl
-            st.session_state[f'tp_{est["tipo"]}'] = tp
-            
+    for c in config:
+        with c["col"]:
+            # Cálculo de niveles según sentido
+            distancia = atr * c["mult"]
+            if es_compra:
+                sl = last_p - distancia
+                tp = last_p + (distancia * 2) # Ratio 1:2
+            else:
+                sl = last_p + distancia
+                tp = last_p - (distancia * 2)
+
+            # --- INTERFAZ DE TARJETA ---
             st.markdown(f"""
-            <div style="background-color: #1e1e1e; padding: 15px; border-radius: 10px; border-left: 5px solid #0066ff;">
-                <h4 style="margin:0; color: #0066ff;">{est["label"]}</h4>
-                <p style="margin:5px 0;"><b>TP:</b> {tp:,.2f}</p>
-                <p style="margin:5px 0;"><b>SL:</b> {sl:,.2f}</p>
-                <p style="font-size: 0.8rem; color: #888;">Riesgo/Ben: 1:2</p>
+            <div style="background-color: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid {color_base}; border-top: 5px solid {color_base};">
+                <h4 style="margin:0; color: {color_base};">{c["nombre"]}</h4>
+                <p style="margin:5px 0; font-size: 1.1rem;"><b>{label_sentido}</b></p>
+                <hr style="margin:10px 0; border: 0.5px solid #333;">
+                <p style="margin:2px 0;">📍 <b>Entrada:</b> {last_p:,.2f}</p>
+                <p style="margin:2px 0;">🎯 <b>Objetivo TP:</b> {tp:,.2f}</p>
+                <p style="margin:2px 0;">🛡️ <b>Stop Loss:</b> {sl:,.2f}</p>
             </div>
             """, unsafe_allow_html=True)
+
+            # 3. BOTÓN DE SELECCIÓN (Carga los valores en el Sentinel Bridge)
+            if st.button(f"Seleccionar {c['id']}", key=f"btn_{c['id']}", use_container_width=True):
+                st.session_state['sl_final'] = sl
+                st.session_state['tp_final'] = tp
+                st.session_state['entrada_sug'] = last_p
+                st.session_state['modo_seleccionado'] = c['id']
+                st.toast(f"✅ Niveles de {c['id']} cargados en Sentinel Bridge")
+
+            # 4. COPIADO RÁPIDO PARA XTB
+            with st.expander("📋 Copiar para XTB"):
+                st.write("Lotes Sugeridos:")
+                st.code("0.10", language="text")
+                st.write("Take Profit:")
+                st.code(f"{tp:,.4f}", language="text")
+                st.write("Stop Loss:")
+                st.code(f"{sl:,.4f}", language="text")
+
 # =========================================================
-# BLOQUE 9: SENTINEL BRIDGE (XTB & REGISTRO)
+# BLOQUE 9: SENTINEL BRIDGE (ACTUALIZADO PARA RECIBIR DATOS)
 # =========================================================
 def render_sentinel_bridge():
     st.markdown("---")
-    st.subheader("🚀 EJECUCIÓN Y REGISTRO XTB")
+    st.subheader("🚀 SENTINEL BRIDGE: REGISTRO REAL")
     
-    ticker = st.session_state.get('ticker', 'NQ=F')
-    last_p = st.session_state.get('last_price', 0.0)
-    
-    col_xtb, col_reg = st.columns([1, 2])
-    
-    with col_xtb:
-        xtb_ticker = ticker.replace("-USD", "").replace("=F", "")
-        url = f"https://xstation5.xtb.com/?symbol={xtb_ticker}"
-        st.link_button(f"⚡ ABRIR {xtb_ticker} EN XTB", url, use_container_width=True, type="primary")
-        st.caption("Copia los niveles de arriba y pégalos en tu orden.")
+    # Recuperamos los valores predefinidos del Bloque 8 o valores por defecto
+    sl_pre = st.session_state.get('sl_final', 0.0)
+    tp_pre = st.session_state.get('tp_final', 0.0)
+    ent_pre = st.session_state.get('entrada_sug', st.session_state.get('last_price', 0.0))
 
-    with col_reg:
-        with st.form("registro_xtb"):
-            c1, c2 = st.columns(2)
-            p_ent = c1.number_input("Precio Entrada Real", value=last_p)
-            lotes = c1.number_input("Lotes", value=0.10, step=0.01)
-            sl_r = c2.number_input("Stop Loss Real", value=0.0)
-            tp_r = c2.number_input("Take Profit Real", value=0.0)
-            
-            if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA SENTINEL", use_container_width=True):
-                # Guardar en la lista de activos
-                nueva_op = {"ticker": ticker, "entrada": p_ent, "sl": sl_r, "tp": tp_r, "lotes": lotes, "modo": "REAL"}
-                if 'active_trades' not in st.session_state: st.session_state.active_trades = []
-                st.session_state.active_trades.append(nueva_op)
-                st.success("Operación registrada bajo vigilancia.")
+    with st.form("form_sentinel_real"):
+        c1, c2, c3 = st.columns(3)
+        p_entrada = c1.number_input("Precio Entrada XTB", value=float(ent_pre), format="%.4f")
+        lotes = c1.number_input("Volumen (Lotes)", value=0.10, step=0.01)
+        
+        sl_real = c2.number_input("Stop Loss Real", value=float(sl_pre), format="%.4f")
+        tp_real = c3.number_input("Take Profit Real", value=float(tp_pre), format="%.4f")
+        
+        if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA EN RADAR", use_container_width=True):
+            nueva_op = {
+                "ticker": st.session_state.ticker,
+                "entrada": p_entrada,
+                "lotes": lotes,
+                "sl": sl_real,
+                "tp": tp_real,
+                "modo": st.session_state.get('modo_seleccionado', 'REAL')
+            }
+            if 'active_trades' not in st.session_state: st.session_state.active_trades = []
+            st.session_state.active_trades.append(nueva_op)
+            st.success("🛰️ Radar Sentinel sincronizado con tu posición de XTB.")
 # --- LÓGICA DE RENDERIZADO FINAL ---
 # 1. Bajamos los datos
 df_final = get_market_data(st.session_state.get('ticker', 'NQ=F'), 
