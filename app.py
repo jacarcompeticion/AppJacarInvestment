@@ -328,94 +328,100 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 
 # =========================================================
-# BLOQUE 8: ESTRATEGIAS CON PROBABILIDAD Y ENTRADAS ESCALONADAS
+# BLOQUE 8: ESTRATEGIAS (PROBABILIDAD + ENTRADAS ESCALONADAS)
 # =========================================================
 def render_strategy_cards(df):
     st.markdown("---")
     st.subheader("🎯 ESTRATEGIAS SUGERIDAS SENTINEL")
     
     if df is None or 'EMA_20' not in df.columns:
-        st.warning("Calculando probabilidades de éxito...")
+        st.warning("Calculando métricas de probabilidad...")
         return
 
     last_p = float(df['Close'].iloc[-1])
     ema_v = float(df['EMA_20'].iloc[-1])
     rsi_v = float(df['RSI'].iloc[-1])
     
-    # 1. SENTIDO Y FUERZA
+    # 1. SENTIDO (Compra/Venta)
     es_compra = last_p > ema_v
     color_base = "#00ff41" if es_compra else "#ff3131"
+    label_sentido = "COMPRA" if es_compra else "VENTA"
     atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
     
     col1, col2, col3 = st.columns(3)
     
-    # CONFIGURACIÓN TÉCNICA DIFERENCIADA
+    # CONFIGURACIÓN DIFERENCIADA
     config = [
-        {
-            "id": "CP", "nombre": "CORTO PLAZO", 
-            "entrada": last_p, # Entrada a mercado
-            "lotes": 0.50, "mult": 1.5,
-            "prob_base": 65 if (40 < rsi_v < 60) else 45,
-            "desc": "Entrada Inmediata (Market)", "col": col1
-        },
-        {
-            "id": "MP", "nombre": "MEDIO PLAZO", 
-            "entrada": ema_v, # Entrada en el retroceso a la EMA
-            "lotes": 0.25, "mult": 3.0,
-            "prob_base": 75 if es_compra else 70,
-            "desc": "Pullback a EMA 20", "col": col2
-        },
-        {
-            "id": "LP", "nombre": "LARGO PLAZO", 
-            "entrada": ema_v * (0.98 if es_compra else 1.02), # Entrada en zona de valor profunda
-            "lotes": 0.10, "mult": 6.0,
-            "prob_base": 85,
-            "desc": "Zona de Valor Profunda", "col": col3
-        }
+        {"id": "CP", "n": "CORTO PLAZO", "ent": last_p, "lotes": 0.50, "m": 1.5, "p": 60, "col": col1},
+        {"id": "MP", "n": "MEDIO PLAZO", "ent": ema_v, "lotes": 0.25, "m": 3.0, "p": 75, "col": col2},
+        {"id": "LP", "n": "LARGO PLAZO", "ent": ema_v * (0.98 if es_compra else 1.02), "lotes": 0.10, "m": 6.0, "p": 88, "col": col3}
     ]
 
     for c in config:
         with c["col"]:
-            # Cálculo de niveles desde SU precio de entrada específico
-            ent_especifica = c["entrada"]
-            distancia = atr * c["mult"]
+            # Cálculo de niveles
+            dist = atr * c["m"]
+            sl = c["ent"] - dist if es_compra else c["ent"] + dist
+            tp = c["ent"] + (dist * 2.5) if es_compra else c["ent"] - (dist * 2.5)
             
-            if es_compra:
-                sl = ent_especifica - distancia
-                tp = ent_especifica + (distancia * 3) # Mayor ratio para LP
-            else:
-                sl = ent_especifica + distancia
-                tp = ent_especifica - (distancia * 3)
+            # Ajuste de probabilidad por RSI
+            prob = c["p"]
+            if (rsi_v > 70 and es_compra) or (rsi_v < 30 and not es_compra): prob -= 20
 
-            # Cálculo de Probabilidad Dinámica
-            # Penalizamos si el RSI está en extremos
-            prob_final = c["prob_base"]
-            if rsi_v > 70 or rsi_v < 30: prob_final -= 15
-            
+            # Renderizado de Tarjeta (Corregido para evitar errores visuales)
             st.markdown(f"""
-            <div style="background-color: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid {color_base}; border-top: 8px solid {color_base}; min-height: 380px;">
-                <h4 style="margin:0; color: {color_base}; text-align: center;">{c["nombre"]}</h4>
-                <p style="text-align: center; font-size: 0.8rem; color: #888;">{c['desc']}</p>
-                
-                <div style="text-align: center; margin: 10px 0;">
-                    <span style="font-size: 1.5rem; font-weight: bold; color: {color_base};">{prob_final}%</span>
-                    <br><span style="font-size: 0.7rem; color: #aaa;">PROBABILIDAD ÉXITO</span>
+            <div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid {color_base}; border-top: 10px solid {color_base};">
+                <h3 style="margin:0; color:{color_base}; text-align:center;">{c['n']}</h3>
+                <div style="text-align:center; margin:15px 0;">
+                    <span style="font-size:2rem; font-weight:bold; color:white;">{prob}%</span><br>
+                    <span style="color:#888; font-size:0.8rem;">PROBABILIDAD</span>
                 </div>
-                
-                <hr style="margin:10px 0; border: 0.5px solid #333;">
-                <p style="margin:5px 0;">💰 <b>Volumen:</b> {c['lotes']} Lotes</p>
-                <p style="margin:2px 0;">📍 <b>Entrada:</b> {ent_especifica:,.2f}</p>
-                <p style="margin:2px 0;">🎯 <b>Target:</b> {tp:,.2f}</p>
-                <p style="margin:2px 0;">🛡️ <b>Stop:</b> {sl:,.2f}</p>
+                <p style="margin:5px 0;"><b>MODO:</b> {label_sentido}</p>
+                <p style="margin:5px 0;">💰 <b>Lotes:</b> {c['lotes']}</p>
+                <p style="margin:5px 0;">📍 <b>Entrada:</b> {c['ent']:,.2f}</p>
+                <p style="margin:5px 0;">🎯 <b>TP:</b> {tp:,.2f}</p>
+                <p style="margin:5px 0;">🛡️ <b>SL:</b> {sl:,.2f}</p>
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button(f"Sincronizar {c['id']}", key=f"v3_{c['id']}", use_container_width=True):
+            if st.button(f"Sincronizar {c['id']}", key=f"sync_{c['id']}", use_container_width=True):
                 st.session_state['sl_final'] = sl
                 st.session_state['tp_final'] = tp
                 st.session_state['lotes_sug'] = c['lotes']
-                st.session_state['entrada_sug'] = ent_especifica
-                st.toast(f"✅ Configuración {c['id']} enviada al Sentinel Bridge")
+                st.session_state['entrada_sug'] = c['ent']
+                st.session_state['modo_op'] = c['id']
+                st.rerun()
+
+# =========================================================
+# BLOQUE 9: SENTINEL BRIDGE (BLINDADO CONTRA NAMEERROR)
+# =========================================================
+def render_sentinel_bridge():
+    st.markdown("---")
+    st.subheader("🚀 SENTINEL BRIDGE: REGISTRO REAL")
+    
+    # Inicialización de variables seguras para evitar NameError
+    sl_v = st.session_state.get('sl_final', 0.0)
+    tp_v = st.session_state.get('tp_final', 0.0)
+    lo_v = st.session_state.get('lotes_sug', 0.10)
+    en_v = st.session_state.get('entrada_sug', st.session_state.get('last_price', 0.0))
+
+    with st.form("registro_xtb_final"):
+        c1, c2, c3 = st.columns(3)
+        ent_real = c1.number_input("Entrada XTB", value=float(en_v), format="%.4f")
+        lotes_real = c1.number_input("Lotes", value=float(lo_v), step=0.01)
+        sl_real = c2.number_input("Stop Loss", value=float(sl_v), format="%.4f")
+        tp_real = c3.number_input("Take Profit", value=float(tp_v), format="%.4f")
+        
+        if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA REAL", use_container_width=True):
+            nueva_op = {
+                "ticker": st.session_state.get('ticker', 'DESCONOCIDO'),
+                "entrada": ent_real, "lotes": lotes_real,
+                "sl": sl_real, "tp": tp_real,
+                "modo": st.session_state.get('modo_op', 'MANUAL')
+            }
+            if 'active_trades' not in st.session_state: st.session_state.active_trades = []
+            st.session_state.active_trades.append(nueva_op)
+            st.success("✅ Posición sincronizada con el Radar.")
 # --- LÓGICA DE RENDERIZADO FINAL ---
 # 1. Bajamos los datos
 df_final = get_market_data(st.session_state.get('ticker', 'NQ=F'), 
