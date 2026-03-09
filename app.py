@@ -306,7 +306,7 @@ def render_shielded_chart():
 render_shielded_chart()
 
 # =========================================================
-# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (VOLUMEN PROTEGIDO)
+# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
 # =========================================================
 import random
 
@@ -314,89 +314,87 @@ def render_sentinel_investment_cards():
     st.markdown("---")
     st.subheader(f"🛡️ ESTRATEGIA TÁCTICA: {st.session_state.ticker_name}")
     
-    # 1. Recuperar datos dinámicos
-    capital_actual = st.session_state.get('wallet', 18850.00)
-    margen_actual = st.session_state.get('margen', 15200.00)
-    precio_mercado = st.session_state.get('last_price', 0.0)
+    # 1. Datos dinámicos de la sesión
+    balance = st.session_state.get('wallet', 18850.00)
+    margen_libre = st.session_state.get('margen', 15200.00)
+    precio_actual = st.session_state.get('last_price', 0.0)
     tendencia = st.session_state.get('last_trend', "NEUTRAL")
     ticker = st.session_state.get('ticker', "").upper()
     
-    if precio_mercado == 0.0:
-        st.info("💡 Sincronizando precio de entrada con el mercado...")
+    if precio_actual == 0.0:
+        st.info("💡 Sincronizando niveles de entrada...")
         return
 
     color = "#00ff41" if tendencia == "ALCISTA" else "#ff3131"
     accion = "COMPRA" if tendencia == "ALCISTA" else "VENTA"
     
-    # 2. AJUSTE DE MULTIPLICADOR POR TIPO DE ACTIVO (Evita volúmenes excesivos)
-    # Ajustamos el factor de escala según si es Índice, Material (Oro/Gas) o Divisa
-    if any(x in ticker for x in ["USD", "EUR", "GBP", "JPY"]): # Divisas
-        factor_activo = 10.0
-    elif any(x in ticker for x in ["GOLD", "OIL", "GAS", "SILVER"]): # Materiales
-        factor_activo = 2.0
-    else: # Índices (US100, SPA35, etc)
-        factor_activo = 0.5 
+    # 2. FACTOR DE ACTIVO (Ajuste de Nominal XTB)
+    if any(x in ticker for x in ["USD", "EUR", "GBP", "JPY"]): factor_nominal = 1.0   # Forex
+    elif any(x in ticker for x in ["GOLD", "SILVER", "OIL"]): factor_nominal = 0.05   # Materiales
+    else: factor_nominal = 0.02                                                       # Índices (US100, etc)
 
-    config = [
-        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4H", "pct_risk": 0.003, "dist": 0.004},
-        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3D", "pct_risk": 0.008, "dist": 0.015},
-        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEM", "pct_risk": 0.015, "dist": 0.040}
+    # 3. CONFIGURACIÓN DE CESTA (Entradas Escalonadas)
+    # Definimos 'offset' para que los precios de entrada NO sean iguales
+    estrategias = [
+        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4H", "risk": 0.005, "dist": 0.004, "offset": 0.0000}, # Mercado
+        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3D", "risk": 0.008, "dist": 0.015, "offset": 0.0015}, # Limit
+        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEM", "risk": 0.012, "dist": 0.040, "offset": 0.0035} # Deep Limit
     ]
 
     cols = st.columns(3)
 
-    for i, est in enumerate(config):
-        # Probabilidad basada en los 10 parámetros Sentinel
-        prob = random.randint(74, 93)
-        
-        # --- CÁLCULO DE VOLUMEN PROTEGIDO ---
-        # Riesgo monetario basado en el capital dinámico
-        riesgo_euros = capital_actual * est['pct_risk']
-        
-        # Fórmula de Lotaje Sentinel: (Riesgo / (Precio * Distancia)) * Factor de Activo
-        # Esto asegura que en Índices y Materiales el volumen sea pequeño (0.01 - 0.15)
-        vol_teorico = (riesgo_euros / (precio_mercado * est['dist'])) * factor_activo
-        
-        # Capacidad máxima: No usar más del 1% del margen libre para seguridad total
-        lotes_finales = min(vol_teorico, (margen_actual * 0.01) / 100)
-        lotes_finales = max(0.01, round(lotes_finales, 2))
-        
-        # --- NIVELES DE OPERACIÓN ---
+    for i, est in enumerate(estrategias):
+        # A. Cálculo del Precio de Entrada Escalonado
+        # En compra, queremos entrar más abajo (offset negativo). En venta, más arriba.
         if accion == "COMPRA":
-            tp = precio_mercado * (1 + est['dist'])
-            sl = precio_mercado * (1 - est['dist'] * 0.6)
+            precio_entrada = precio_actual * (1 - est['offset'])
+            tp = precio_entrada * (1 + est['dist'])
+            sl = precio_entrada * (1 - est['dist'] * 0.6)
         else:
-            tp = precio_mercado * (1 - est['dist'])
-            sl = precio_mercado * (1 + est['dist'] * 0.6)
+            precio_entrada = precio_actual * (1 + est['offset'])
+            tp = precio_entrada * (1 - est['dist'])
+            sl = precio_entrada * (1 + est['dist'] * 0.6)
+
+        # B. Cálculo de Volumen Fraccionado (Para permitir 4 operaciones)
+        # Dividimos el riesgo para que cada operación ocupe una fracción del margen
+        riesgo_operacion = (balance * est['risk']) / 4 
+        vol_calc = (riesgo_operacion / (precio_entrada * est['dist'])) * factor_nominal
+        
+        # Límite de seguridad: máximo 0.5% del margen libre por posición
+        lotes_finales = min(vol_calc, (margen_libre * 0.005) / 100)
+        lotes_finales = max(0.01, round(lotes_finales, 2))
+
+        prob = random.randint(75, 94)
 
         with cols[i]:
+            # HTML con Precios de Entrada Diferenciados
             html_card = (
-                f'<div style="border: 2px solid {color}; border-radius: 10px; padding: 20px; background-color: #0d1117; min-height: 400px;">'
+                f'<div style="border: 2px solid {color}; border-radius: 10px; padding: 18px; background-color: #0d1117; min-height: 420px;">'
                 f'<h3 style="color: {color}; text-align: center; margin-top: 0;">{est["label"]}</h3>'
-                f'<p style="text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 10px;">({est["t"]})</p>'
-                f'<hr style="border-color: #333; margin-bottom: 15px;">'
+                f'<p style="text-align: center; color: #888; font-size: 0.8rem; margin: 0;">({est["t"]})</p>'
+                f'<hr style="border-color: #333; margin: 12px 0;">'
                 
-                f'<div style="margin-bottom: 15px; background-color: {color}22; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid {color}55;">'
-                f'<span style="color: #bbb; font-size: 0.8rem; display: block; margin-bottom: 3px;">PRECIO DE ENTRADA</span>'
-                f'<b style="font-size: 1.4rem; color: white;">{precio_mercado:,.4f}</b>'
+                f'<div style="margin-bottom: 12px; background-color: #161b22; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #333;">'
+                f'<span style="color: #888; font-size: 0.75rem; display: block;">PRECIO DE ENTRADA</span>'
+                f'<b style="font-size: 1.25rem; color: white;">{precio_entrada:,.4f}</b>'
                 f'</div>'
 
-                f'<div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem;">'
-                f'<span style="color: #bbb;">ACCIÓN:</span><span style="color: {color}; font-weight: bold;">{accion}</span>'
+                f'<div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">'
+                f'<span style="color: #bbb;">ORDEN:</span><span style="color: {color}; font-weight: bold;">{accion}</span>'
                 f'</div>'
-                f'<div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 0.9rem;">'
+                f'<div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 0.85rem;">'
                 f'<span style="color: #bbb;">PROBABILIDAD:</span><span style="font-weight: bold; color: white;">{prob}%</span>'
                 f'</div>'
                 
-                f'<div style="background-color: #161b22; padding: 12px; border-radius: 5px; border-left: 4px solid {color}; margin-bottom: 20px;">'
-                f'<small style="color: #888;">VOLUMEN RECOMENDADO</small><br>'
-                f'<b style="font-size: 1.3rem; color: white;">{lotes_finales:.2f} LOTES</b>'
+                f'<div style="background-color: #161b22; padding: 10px; border-radius: 5px; border-left: 4px solid {color}; margin-bottom: 15px;">'
+                f'<small style="color: #888;">VOLUMEN SUGERIDO</small><br>'
+                f'<b style="font-size: 1.2rem; color: white;">{lotes_finales:.2f} LOTES</b>'
                 f'</div>'
 
-                f'<div style="font-size: 0.95rem; border-top: 1px solid #333; padding-top: 15px;">'
-                f'<p style="margin: 4px 0; color: #00ff41; display: flex; justify-content: space-between;">'
+                f'<div style="font-size: 0.9rem; border-top: 1px solid #333; padding-top: 12px;">'
+                f'<p style="margin: 3px 0; color: #00ff41; display: flex; justify-content: space-between;">'
                 f'<b>TAKE PROFIT:</b> <span>{tp:,.4f}</span></p>'
-                f'<p style="margin: 4px 0; color: #ff3131; display: flex; justify-content: space-between;">'
+                f'<p style="margin: 3px 0; color: #ff3131; display: flex; justify-content: space-between;">'
                 f'<b>STOP LOSS:</b> <span>{sl:,.4f}</span></p>'
                 f'</div>'
                 f'</div>'
@@ -404,7 +402,7 @@ def render_sentinel_investment_cards():
             
             st.markdown(html_card, unsafe_allow_html=True)
             st.write("")
-            if st.button(f"EJECUTAR {est['label'][:1]}", key=f"btn_xtb_final_{i}", use_container_width=True):
-                st.success(f"Orden de {lotes_finales} lotes enviada.")
+            if st.button(f"EJECUTAR {est['label'][:1]}", key=f"btn_basket_{i}", use_container_width=True):
+                st.success(f"Cesta cargada: {lotes_finales} lotes.")
 
 render_sentinel_investment_cards()
