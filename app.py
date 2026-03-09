@@ -4,6 +4,9 @@ import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import streamlit.components.v1 as components
+import feedparser
+
 # --- AQUÍ VA EL NUEVO IMPORT ---
 from streamlit_autorefresh import st_autorefresh
 
@@ -520,8 +523,86 @@ def send_telegram_alert(message):
 
 import feedparser
 
-import streamlit.components.v1 as components
+def render_sentinel_news(ticker):
+    # 1. Cabecera limpia
+    st.markdown(f"## 📰 NOTICIAS: {ticker}")
+    
+    # Configuración de Activo XTB
+    xtb_names = {"NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD", "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD"}
+    nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0].upper())
+    
+    # 2. Datos de mercado para cálculos
+    price = st.session_state.get('last_price', 0.0)
+    atr = price * 0.006 
+    
+    # 3. Obtención de noticias vía RSS (Investing.com)
+    try:
+        f = feedparser.parse("https://es.investing.com/rss/news.rss")
+        all_entries = f.entries[:6]
+    except Exception as e:
+        st.error(f"Error de conexión con la agencia: {e}")
+        return
 
+    for i, entry in enumerate(all_entries):
+        t_low = entry.title.lower()
+        
+        # --- LÓGICA DE TRADING XTB ---
+        # Definimos tipo de orden y color de recuadro
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "buy", "comprar"]):
+            tipo, color, sl, tp = "COMPRA", "#008d28", price - (atr * 1.5), price + (atr * 3.0)
+        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell", "vender"]):
+            tipo, color, sl, tp = "VENTA", "#ff3131", price + (atr * 1.5), price - (atr * 3.0)
+        else:
+            tipo, color, sl, tp = "OBSERVAR", "#333333", price, price
+
+        prec = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
+        resumen = entry.get('summary', 'Análisis técnico en proceso...').split('<')[0] # Limpiamos HTML del RSS
+
+        # --- INTERFAZ VISUAL (FONDO BLANCO / LETRAS NEGRAS) ---
+        header_text = f"┃ {tipo} ┃ {nombre_xtb}: {entry.title[:60]}..."
+        
+        with st.expander(header_text):
+            # Renderizado de alta visibilidad
+            html_xtb = f"""
+            <div style="background-color: white; color: black; padding: 20px; border: 3px solid {color}; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
+                    <span style="font-weight: 800; font-size: 1.1em; color: black;">{nombre_xtb}</span>
+                    <span style="background: {color}; color: white; padding: 3px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">{tipo}</span>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <p style="font-size: 1rem; line-height: 1.4; color: black; margin: 0;">
+                        <strong style="color: #333;">RESUMEN:</strong> {resumen[:250]}...
+                    </p>
+                </div>
+                
+                <div style="background: #f7f7f7; border: 1px solid #ddd; padding: 12px; border-radius: 6px; display: flex; justify-content: space-around; text-align: center;">
+                    <div style="flex: 1;">
+                        <div style="color: #666; font-size: 0.7rem; font-weight: bold;">LOTES</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: black;">0.10</div>
+                    </div>
+                    <div style="flex: 1; border-left: 1px solid #ddd; border-right: 1px solid #ddd;">
+                        <div style="color: #666; font-size: 0.7rem; font-weight: bold;">STOP LOSS</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: #ff3131;">{sl:,.{prec}f}</div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="color: #666; font-size: 0.7rem; font-weight: bold;">TAKE PROFIT</div>
+                        <div style="font-size: 1.1rem; font-weight: 800; color: #008d28;">{tp:,.{prec}f}</div>
+                    </div>
+                </div>
+            </div>
+            """
+            components.html(html_xtb, height=250)
+            
+            # Botón de Telegram
+            if st.button(f"📲 DISPARAR TICKET: {i}", use_container_width=True):
+                msg = (f"🏦 *TERMINAL XTB: {nombre_xtb}*\n"
+                       f"📍 *ORDEN:* {tipo}\n"
+                       f"🛑 *SL:* {sl:,.{prec}f}\n"
+                       f"🎯 *TP:* {tp:,.{prec}f}\n\n"
+                       f"📰 {entry.title}")
+                send_telegram_alert(msg)
+                st.toast("Señal enviada")
 
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
