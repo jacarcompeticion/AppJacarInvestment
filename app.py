@@ -527,83 +527,74 @@ def render_sentinel_news(ticker):
     # 1. Cabecera limpia
     st.markdown(f"## 📰 NOTICIAS: {ticker}")
     
-    # Configuración de Activo XTB
     xtb_names = {"NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD", "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD"}
     nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0].upper())
     
-    # 2. Datos de mercado para cálculos
     price = st.session_state.get('last_price', 0.0)
     atr = price * 0.006 
     
-    # 3. Obtención de noticias vía RSS (Investing.com)
     try:
         f = feedparser.parse("https://es.investing.com/rss/news.rss")
         all_entries = f.entries[:6]
-    except Exception as e:
-        st.error(f"Error de conexión con la agencia: {e}")
+    except:
+        st.error("Error de conexión.")
         return
 
     for i, entry in enumerate(all_entries):
         t_low = entry.title.lower()
         
-        # --- LÓGICA DE TRADING XTB ---
-        # Definimos tipo de orden y color de recuadro
-        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "buy", "comprar"]):
+        # --- LÓGICA DE TRADING ---
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "buy"]):
             tipo, color, sl, tp = "COMPRA", "#008d28", price - (atr * 1.5), price + (atr * 3.0)
-        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell", "vender"]):
+        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell"]):
             tipo, color, sl, tp = "VENTA", "#ff3131", price + (atr * 1.5), price - (atr * 3.0)
         else:
             tipo, color, sl, tp = "OBSERVAR", "#333333", price, price
 
         prec = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
-        resumen = entry.get('summary', 'Análisis técnico en proceso...').split('<')[0] # Limpiamos HTML del RSS
+        resumen = entry.get('summary', 'Análisis técnico en proceso...').split('<')[0]
 
-        # --- INTERFAZ VISUAL (FONDO BLANCO / LETRAS NEGRAS) ---
-        header_text = f"┃ {tipo} ┃ {nombre_xtb}: {entry.title[:60]}..."
+        # --- TÍTULO DEL EXPANDER ---
+        header_text = f"┃ {tipo} ┃ {nombre_xtb}: {entry.title[:55]}..."
         
         with st.expander(header_text):
-            # Renderizado de alta visibilidad
+            # 2. HTML CON INYECCIÓN DE ESTILO "FORZADO" (!important)
             html_xtb = f"""
-            <div style="background-color: white; color: black; padding: 20px; border: 3px solid {color}; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
-                    <span style="font-weight: 800; font-size: 1.1em; color: black;">{nombre_xtb}</span>
-                    <span style="background: {color}; color: white; padding: 3px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">{tipo}</span>
+            <div style="background-color: #FFFFFF !important; color: #000000 !important; padding: 20px; border: 4px solid {color} !important; border-radius: 8px; font-family: Arial, sans-serif !important;">
+                
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #EEEEEE !important; padding-bottom: 10px; margin-bottom: 15px;">
+                    <span style="font-weight: 800; font-size: 1.2em; color: #000000 !important;">{nombre_xtb}</span>
+                    <span style="background-color: {color} !important; color: #FFFFFF !important; padding: 5px 12px; border-radius: 4px; font-weight: bold;">{tipo}</span>
                 </div>
                 
                 <div style="margin-bottom: 20px;">
-                    <p style="font-size: 1rem; line-height: 1.4; color: black; margin: 0;">
-                        <strong style="color: #333;">RESUMEN:</strong> {resumen[:250]}...
+                    <p style="font-size: 1.1rem !important; line-height: 1.5 !important; color: #000000 !important;">
+                        <b style="color: #000000 !important;">RESUMEN:</b> {resumen[:280]}...
                     </p>
                 </div>
                 
-                <div style="background: #f7f7f7; border: 1px solid #ddd; padding: 12px; border-radius: 6px; display: flex; justify-content: space-around; text-align: center;">
+                <div style="background-color: #F0F0F0 !important; border: 1px solid #CCCCCC !important; padding: 15px; border-radius: 6px; display: flex; justify-content: space-around; text-align: center;">
                     <div style="flex: 1;">
-                        <div style="color: #666; font-size: 0.7rem; font-weight: bold;">LOTES</div>
-                        <div style="font-size: 1.1rem; font-weight: 800; color: black;">0.10</div>
+                        <div style="color: #444444 !important; font-size: 0.8rem; font-weight: bold;">LOTES</div>
+                        <div style="font-size: 1.2rem; font-weight: 900; color: #000000 !important;">0.10</div>
                     </div>
-                    <div style="flex: 1; border-left: 1px solid #ddd; border-right: 1px solid #ddd;">
-                        <div style="color: #666; font-size: 0.7rem; font-weight: bold;">STOP LOSS</div>
-                        <div style="font-size: 1.1rem; font-weight: 800; color: #ff3131;">{sl:,.{prec}f}</div>
+                    <div style="flex: 1; border-left: 2px solid #DDDDDD !important; border-right: 2px solid #DDDDDD !important;">
+                        <div style="color: #444444 !important; font-size: 0.8rem; font-weight: bold;">STOP LOSS</div>
+                        <div style="font-size: 1.2rem; font-weight: 900; color: #FF0000 !important;">{sl:,.{prec}f}</div>
                     </div>
                     <div style="flex: 1;">
-                        <div style="color: #666; font-size: 0.7rem; font-weight: bold;">TAKE PROFIT</div>
-                        <div style="font-size: 1.1rem; font-weight: 800; color: #008d28;">{tp:,.{prec}f}</div>
+                        <div style="color: #444444 !important; font-size: 0.8rem; font-weight: bold;">TAKE PROFIT</div>
+                        <div style="font-size: 1.2rem; font-weight: 900; color: #008d28 !important;">{tp:,.{prec}f}</div>
                     </div>
                 </div>
             </div>
             """
-            components.html(html_xtb, height=250)
+            # El secreto: components.html crea un entorno aislado del tema oscuro
+            components.html(html_xtb, height=280)
             
-            # Botón de Telegram
             if st.button(f"📲 DISPARAR TICKET: {i}", use_container_width=True):
-                msg = (f"🏦 *TERMINAL XTB: {nombre_xtb}*\n"
-                       f"📍 *ORDEN:* {tipo}\n"
-                       f"🛑 *SL:* {sl:,.{prec}f}\n"
-                       f"🎯 *TP:* {tp:,.{prec}f}\n\n"
-                       f"📰 {entry.title}")
-                send_telegram_alert(msg)
-                st.toast("Señal enviada")
-
+                send_telegram_alert(f"🏦 *XTB {nombre_xtb}*\nORDEN: {tipo}\nSL: {sl:,.{prec}f} | TP: {tp:,.{prec}f}")
+                st.toast("Enviado")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
