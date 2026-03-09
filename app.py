@@ -414,87 +414,67 @@ def render_strategy_cards(df):
 # =========================================================
 def render_sentinel_bridge():
     st.markdown("---")
-    st.subheader("🚀 SENTINEL BRIDGE: REGISTRO Y EJECUCIÓN")
+    st.subheader("🚀 SENTINEL BRIDGE: CALCULADORA DE RIESGO")
 
-    # 1. Recuperamos la configuración de precisión del activo actual
-    # Si no existe (por ser el primer arranque), detectamos el ticker
     ticker_actual = st.session_state.get('ticker', 'NQ=F')
     
-    # Lógica de decimales dinámica
-    if "=X" in ticker_actual or any(x in ticker_actual for x in ["EUR", "USD", "GBP", "JPY", "AUD"]):
+    # 1. Configuración de Precisión y Valor por Punto
+    if "=X" in ticker_actual or any(x in ticker_actual for x in ["EUR", "USD", "GBP"]):
         prec = 5
         step_val = 0.0001
-    elif "BTC" in ticker_actual or "ETH" in ticker_actual:
-        prec = 2
-        step_val = 0.01
+        # En Forex, 1 lote = 100,000 unidades. 1 pip (0.0001) suele valer $10 aprox.
+        tick_value = 100000 
     else:
         prec = 2
         step_val = 0.25
+        # En Índices/Commodities, 1 punto suele valer 1 unidad de la moneda por lote
+        tick_value = 1 
 
-    # 2. Recuperamos valores predefinidos (desde los botones 'Sincronizar' del Bloque 8)
-    # Usamos .get() con valores por defecto para evitar errores de NameError
+    # 2. Recuperamos valores de la sesión
     sl_sug = st.session_state.get('sl_final', 0.0)
     tp_sug = st.session_state.get('tp_final', 0.0)
     ent_sug = st.session_state.get('entrada_sug', st.session_state.get('last_price', 0.0))
     lotes_sug = st.session_state.get('lotes_sug', 0.10)
-    modo_sug = st.session_state.get('modo_op', 'MANUAL')
 
-    # 3. INTERFAZ DE FORMULARIO
+    # 3. INTERFAZ DE FORMULARIO CON CÁLCULO MONETARIO
     with st.form("registro_operacion_sentinel"):
-        col_info, col_precios = st.columns([1, 2])
+        col_inputs, col_monetary = st.columns([2, 1])
         
-        with col_info:
-            st.markdown(f"**Activo:** `{ticker_actual}`")
-            st.markdown(f"**Modo Sugerido:** `{modo_sug}`")
-            lotes_real = st.number_input("Volumen (Lotes)", value=float(lotes_sug), step=0.01, help="Ajusta el tamaño de tu posición en XTB")
-            
-            # Enlace directo a XTB
-            xtb_ticker = ticker_actual.replace("-USD", "").replace("=F", "")
-            url_xtb = f"https://xstation5.xtb.com/?symbol={xtb_ticker}"
-            st.markdown(f"[⚡ Abrir {xtb_ticker} en X-Station]({url_xtb})")
+        with col_inputs:
+            c1, c2, c3 = st.columns(3)
+            ent_real = c1.number_input("Entrada", value=float(ent_sug), format=f"%.{prec}f", step=step_val)
+            lotes_real = c1.number_input("Lotes (Volumen)", value=float(lotes_sug), step=0.01)
+            sl_real = c2.number_input("Stop Loss", value=float(sl_sug), format=f"%.{prec}f", step=step_val)
+            tp_real = c3.number_input("Take Profit", value=float(tp_sug), format=f"%.{prec}f", step=step_val)
 
-        with col_precios:
-            c1, c2 = st.columns(2)
-            # Entrada y Stop Loss
-            ent_real = c1.number_input("Precio Entrada Real", value=float(ent_sug), format=f"%.{prec}f", step=step_val)
-            sl_real = c1.number_input("Stop Loss Real", value=float(sl_sug), format=f"%.{prec}f", step=step_val)
-            
-            # Take Profit y Comentario
-            tp_real = c2.number_input("Take Profit Real", value=float(tp_sug), format=f"%.{prec}f", step=step_val)
-            comentario = c2.text_input("Nota de estrategia", placeholder="Ej: Rebote en EMA 20")
+        # --- LÓGICA DE CÁLCULO DE GANANCIA/PÉRDIDA ---
+        # Calculamos la diferencia de precio
+        diff_sl = abs(ent_real - sl_real)
+        diff_tp = abs(tp_real - ent_real)
+        
+        # Estimación en moneda (Lotes * Diferencia * Valor del Contrato)
+        pnl_sl = diff_sl * lotes_real * tick_value
+        pnl_tp = diff_tp * lotes_real * tick_value
+        
+        with col_monetary:
+            st.markdown(f"""
+            <div style="background-color: #0d1117; padding: 10px; border: 1px solid #333; border-radius: 5px;">
+                <p style="margin:0; color:#ff3131; font-size:0.9rem;">RIESGO (SL):</p>
+                <h4 style="margin:0; color:#ff3131;">-{pnl_sl:,.2f}€</h4>
+                <hr style="margin:8px 0; border-color:#222;">
+                <p style="margin:0; color:#00ff41; font-size:0.9rem;">BENEFICIO (TP):</p>
+                <h4 style="margin:0; color:#00ff41;">+{pnl_tp:,.2f}€</h4>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # BOTÓN DE ACTIVACIÓN
         if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA SENTINEL", use_container_width=True):
-            # Creamos el diccionario de la operación
             nueva_op = {
-                "ticker": ticker_actual,
-                "entrada": ent_real,
-                "lotes": lotes_real,
-                "sl": sl_real,
-                "tp": tp_real,
-                "modo": modo_sug,
-                "timestamp": pd.Timestamp.now().strftime("%H:%M:%S")
+                "ticker": ticker_actual, "entrada": ent_real, "lotes": lotes_real,
+                "sl": sl_real, "tp": tp_real, "timestamp": pd.Timestamp.now().strftime("%H:%M:%S")
             }
-            
-            # Guardamos en el historial de trades activos para que el Bloque 7 dibuje las líneas
-            if 'active_trades' not in st.session_state:
-                st.session_state.active_trades = []
-            
             st.session_state.active_trades.append(nueva_op)
-            
-            st.success(f"✅ Radar Sincronizado: Vigilando {ticker_actual} a {ent_real:.{prec}f}")
-            # Forzamos un refresco para que las líneas aparezcan en el gráfico inmediatamente
+            st.success(f"✅ Radar activado. Riesgo total: {pnl_sl:,.2f}€")
             st.rerun()
-
-# 4. MONITOR DE POSICIONES ACTIVAS (Opcional, debajo del formulario)
-    if 'active_trades' in st.session_state and len(st.session_state.active_trades) > 0:
-        with st.expander("📋 Ver Posiciones bajo Vigilancia", expanded=True):
-            for i, op in enumerate(st.session_state.active_trades):
-                st.info(f"**{op['ticker']}** | Entrada: {op['entrada']} | SL: {op['sl']} | TP: {op['tp']} | [{op['timestamp']}]")
-                if st.button(f"Eliminar Vigilancia {i}", key=f"del_{i}"):
-                    st.session_state.active_trades.pop(i)
-                    st.rerun()
-
 # =========================================================
 # ORQUESTADOR FINAL (EL MOTOR QUE ACTIVA EL RADAR)
 # =========================================================
