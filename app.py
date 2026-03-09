@@ -521,16 +521,13 @@ def send_telegram_alert(message):
 import feedparser
 
 def render_sentinel_news(ticker):
-    st.markdown(f"### 🚀 XTB COMMAND CENTER: {ticker}")
+    st.markdown(f"### 📡 XTB COMMAND CENTER: {ticker}")
     
-    # 1. Mapeo de Activos XTB
-    xtb_names = {
-        "NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD",
-        "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD", "CL=F": "OIL.WTI"
-    }
+    # 1. Mapeo de Activos
+    xtb_names = {"NQ=F": "US100", "ES=F": "US500", "GC=F": "GOLD", "BTC-USD": "BITCOIN", "EURUSD=X": "EURUSD"}
     nombre_xtb = xtb_names.get(ticker, ticker.split('=')[0].upper())
     
-    # 2. Obtención de Noticias (Multifuente)
+    # 2. Obtención de Noticias
     feeds = ["https://es.investing.com/rss/news.rss", "https://es.investing.com/rss/market_overview.rss"]
     all_entries = []
     for url in feeds:
@@ -540,95 +537,82 @@ def render_sentinel_news(ticker):
         except: continue
 
     price = st.session_state.get('last_price', 0.0)
-    
-    # Simulación de ATR (Volatilidad media) para el ajuste de SL/TP
-    atr_simulado = price * 0.008 # 0.8% de volatilidad media estimada
+    atr_simulado = price * 0.008 
 
     for i, entry in enumerate(all_entries):
         title = entry.title
-        summary = entry.get('summary', 'Análisis técnico en proceso...')
+        summary = entry.get('summary', 'Análisis en proceso...')
         
-        # --- LÓGICA DE SEÑAL Y RIESGO ---
+        # --- Lógica de Señal ---
         tipo_orden = "OBSERVAR"
         color_xtb = "#333333" 
-        riesgo_alto = False
-        
         t_low = title.lower()
         
-        # Detector de Riesgo
-        if any(w in t_low for w in ["guerra", "crash", "fed", "inflación", "desplome", "urgente"]):
-            riesgo_alto = True
-
-        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "ganancia", "repunto", "buy"]):
+        if any(w in t_low for w in ["sube", "alcista", "crece", "positivo", "ganancia", "buy"]):
             tipo_orden = "COMPRA"
-            color_xtb = "#008d28" # Verde XTB
+            color_xtb = "#008d28"
             sl = price - (atr_simulado * 1.5)
             tp = price + (atr_simulado * 3.0)
-        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell", "bearish"]):
+        elif any(w in t_low for w in ["cae", "baja", "riesgo", "caída", "pérdida", "sell"]):
             tipo_orden = "VENTA"
-            color_xtb = "#ff3131" # Rojo XTB
+            color_xtb = "#ff3131"
             sl = price + (atr_simulado * 1.5)
             tp = price - (atr_simulado * 3.0)
         else:
             sl, tp = price, price
 
-       # --- TÍTULO CON ESTÉTICA XTB ---
-        header_label = f"┃ {tipo_orden} ┃ {nombre_xtb} ➟ {title[:55]}..."
+        # --- ESTILO XTB PARA EL DESPLEGABLE (FONDO CLARO) ---
+        # Usamos un emoji y espacios para dar peso visual al título
+        header_label = f"⬜ {tipo_orden} | {nombre_xtb} » {title[:55]}..."
         
         with st.expander(header_label):
-            # 1. Aviso de Riesgo (si aplica)
-            if riesgo_alto:
-                st.warning("⚠️ **AVISO DE RIESGO ALTO:** Alta volatilidad detectada.")
-
-            # 2. Formateo de decimales según el activo (5 para divisas, 2 para el resto)
-            precision = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
+            # Formateo de precisión
+            prec = 5 if "EUR" in nombre_xtb or "USD" in nombre_xtb else 2
             
-            # 3. CONSTRUCCIÓN DEL HTML (Asegúrate de que este bloque esté así)
-            html_card = f"""
-            <div style="background-color: white; padding: 20px; border: 1px solid #e0e0e0; border-left: 8px solid {color_xtb}; border-radius: 4px; font-family: sans-serif;">
+            # BLOQUE HTML ÚNICO Y SEGURO
+            # El secreto es usar st.write con el HTML y el flag al final
+            st.markdown(f"""
+            <div style="background-color: #ffffff; padding: 20px; border: 1px solid #dddddd; border-left: 10px solid {color_xtb}; border-radius: 8px; font-family: 'Arial', sans-serif;">
                 <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 15px;">
-                    <span style="font-weight: 800; color: #000; font-size: 1.1rem;">{nombre_xtb}</span>
-                    <span style="color: {color_xtb}; font-weight: 900; font-size: 1.1rem;">{tipo_orden} MARKET</span>
+                    <span style="font-weight: bold; color: #1a1a1a; font-size: 1.1rem;">{nombre_xtb}</span>
+                    <span style="color: {color_xtb}; font-weight: 900; font-size: 1.1rem; letter-spacing: 1px;">{tipo_orden}</span>
                 </div>
                 
-                <p style="font-size: 0.95rem; color: #333; margin-bottom: 20px;">
-                    <strong style="color: #000;">CONTEXTO:</strong> {summary[:250]}...
+                <p style="font-size: 0.95rem; color: #333333; line-height: 1.5; margin-bottom: 20px;">
+                    <strong>ANÁLISIS DE MERCADO:</strong> {summary[:250]}...
                 </p>
                 
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #eee;">
+                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #eeeeee;">
                     <div style="display: flex; justify-content: space-around; text-align: center;">
                         <div>
-                            <div style="color: #888; font-size: 0.7rem; font-weight: bold;">VOLUMEN</div>
-                            <div style="font-size: 1.1rem; font-weight: 700; color: #000;">0.10 Lotes</div>
+                            <div style="color: #999; font-size: 0.7rem; font-weight: bold;">LOTES</div>
+                            <div style="font-size: 1.1rem; font-weight: bold; color: #000;">0.10</div>
                         </div>
                         <div>
-                            <div style="color: #888; font-size: 0.7rem; font-weight: bold;">STOP LOSS</div>
-                            <div style="font-size: 1.1rem; font-weight: 700; color: #ff3131;">{sl:,.{precision}f}</div>
+                            <div style="color: #999; font-size: 0.7rem; font-weight: bold;">STOP LOSS</div>
+                            <div style="font-size: 1.1rem; font-weight: bold; color: #ff3131;">{sl:,.{prec}f}</div>
                         </div>
                         <div>
-                            <div style="color: #888; font-size: 0.7rem; font-weight: bold;">TAKE PROFIT</div>
-                            <div style="font-size: 1.1rem; font-weight: 700; color: #008d28;">{tp:,.{precision}f}</div>
+                            <div style="color: #999; font-size: 0.7rem; font-weight: bold;">TAKE PROFIT</div>
+                            <div style="font-size: 1.1rem; font-weight: bold; color: #008d28;">{tp:,.{prec}f}</div>
                         </div>
                     </div>
                 </div>
             </div>
-            """
+            """, unsafe_allow_html=True)
             
-            # Renderizado forzado
-            st.markdown(html_card, unsafe_allow_html=True)
-            
-            # 4. Botón de Acción (fuera del bloque HTML para que funcione)
+            # Botón fuera del HTML para evitar errores de renderizado
             st.write("")
-            if st.button(f"🚀 ENVIAR TICKET AL MÓVIL", key=f"btn_xtb_{i}"):
+            if st.button(f"📲 ENVIAR SEÑAL A TELEGRAM", key=f"xtb_v3_{i}"):
                 msg = (f"🏦 *XTB TERMINAL: {nombre_xtb}*\n"
                        f"━━━━━━━━━━━━━━━\n"
-                       f"💎 *ORDEN:* {tipo_orden}\n"
-                       f"📊 *ENTRADA:* {price:,.{precision}f}\n"
-                       f"🛑 *SL:* {sl:,.{precision}f}\n"
-                       f"🎯 *TP:* {tp:,.{precision}f}\n"
+                       f"📍 *ORDEN:* {tipo_orden}\n"
+                       f"📊 *VOL:* 0.10 | *ENTRADA:* {price:,.{prec}f}\n"
+                       f"🛑 *SL:* {sl:,.{prec}f}\n"
+                       f"🎯 *TP:* {tp:,.{prec}f}\n"
                        f"━━━━━━━━━━━━━━━")
                 send_telegram_alert(msg)
-                st.toast("Señal enviada con éxito")
+                st.toast("Enviado al terminal móvil")
 # =================
 # ORQUESTADOR FINAL (EL MOTOR DE LA APP)
 # =========================================================
