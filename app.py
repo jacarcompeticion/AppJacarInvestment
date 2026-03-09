@@ -8,9 +8,13 @@ from plotly.subplots import make_subplots
 from streamlit_autorefresh import st_autorefresh
 
 # =========================================================
-# CONFIGURACIÓN DE PÁGINA Y AUTO-REFRESCO
+# 2. CONFIGURACIÓN Y CEREBRO (Bloque 0)
 # =========================================================
-st.set_page_config(page_title="Sentinel Investment Radar", layout="wide")
+st.set_page_config(page_title="Sentinel Radar", layout="wide")
+st_autorefresh(interval=15000, limit=None, key="sentinel_refresh")
+
+if 'active_trades' not in st.session_state:
+    st.session_state.active_trades = []
 
 # PEGADO DEL PASO 2 AQUÍ:
 # Esto hará que toda la app se recargue cada 15 segundos.
