@@ -542,17 +542,28 @@ def render_sentinel_news(ticker):
             accion = "REDUCIR EXPOSICIÓN / BUSCAR SHORT"
 
         # 3. RENDERIZADO EN UI
-        with st.container():
-            st.markdown(f"""
-            <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px;">
-                <small style="color: #666;">{publisher} | {pub_time.strftime('%H:%M')}h</small>
-                <h4 style="margin: 5px 0;"><a href="{link}" style="color: white; text-decoration: none;">{title}</a></h4>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-                    <span style="color: {color_impacto}; font-weight: bold; font-size: 0.8rem;">IMPACTO: {impacto}</span>
-                    <span style="background-color: {color_impacto}33; color: {color_impacto}; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: bold;">{accion}</span>
-                </div>
+       with st.container():
+    st.markdown(f"""
+    <div style="background-color: #0d1117; padding: 15px; border-left: 5px solid {color_impacto}; border-radius: 5px; margin-bottom: 10px; border-top: 1px solid #222;">
+        <div style="display: flex; justify-content: space-between;">
+            <small style="color: #666;">{publisher}</small>
+            <small style="color: #666;">{pub_time.strftime('%H:%M')}h</small>
+        </div>
+        <h4 style="margin: 10px 0;">
+            <a href="{safe_link}" target="_blank" style="color: #ffffff; text-decoration: none; font-family: sans-serif;">
+                {safe_title}
+            </a>
+        </h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+            <div style="color: {color_impacto}; font-weight: bold; font-size: 0.75rem; border: 1px solid {color_impacto}; padding: 2px 6px; border-radius: 3px;">
+                IMPACTO: {impacto}
             </div>
-            """, unsafe_allow_html=True)
+            <div style="background-color: {color_impacto}; color: #000000; padding: 3px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 900;">
+                {accion}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
         # 4. ALERTA TELEGRAM (Si es impacto alto y no ha sido enviada)
         if impacto != "NEUTRAL":
