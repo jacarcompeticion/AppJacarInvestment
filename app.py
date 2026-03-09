@@ -18,8 +18,8 @@ if 'active_trades' not in st.session_state:
 count = st_autorefresh(interval=15000, limit=None, key="sentinel_refresh")
 
 # --- CONFIGURACIÓN TELEGRAM ---
-TELEGRAM_TOKEN = 8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU
-TELEGRAM_CHAT_ID = 1296326413
+TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
+TELEGRAM_CHAT_ID = "1296326413"
 
 import requests
 
