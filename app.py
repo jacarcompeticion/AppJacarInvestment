@@ -409,87 +409,66 @@ def render_sentinel_investment_cards():
 
 render_sentinel_investment_cards()
 # =========================================================
-# BLOQUE 9: SENTINEL BRIDGE - REGISTRO Y COPIADO (V.CORREGIDA)
+# BLOQUE 9: SENTINEL BRIDGE (VERSIÓN SIEMPRE VISIBLE)
 # =========================================================
 def render_sentinel_bridge():
     st.markdown("---")
     st.subheader("🚀 SENTINEL BRIDGE: EJECUCIÓN")
 
-    if 'last_price' not in st.session_state:
-        st.info("💡 Analiza un activo para habilitar el puente de ejecución.")
-        return
+    # Si no hay precio aún, usamos uno genérico para no romper la app
+    current_p = st.session_state.get('last_price', 0.0)
+    ticker_actual = st.session_state.get('ticker', 'ACTIVO')
 
-    # 1. SELECTOR DE ESTRATEGIA (CP, MP, LP)
+    # 1. SELECTOR DE ESTRATEGIA
     tipo_est = st.radio("MODO DE OPERACIÓN:", 
-                        ["CORTO PLAZO (CP)", "MEDIO PLAZO (MP)", "LARGO PLAZO (LP)"], 
-                        horizontal=True, key="modo_op_sentinel")
+                        ["CP (Corto)", "MP (Medio)", "LP (Largo)"], 
+                        horizontal=True, key="modo_op_v3")
 
-    # Recuperación de datos del estado (con valores por defecto seguros)
+    # Valores sugeridos (si el Bloque 8 no los dio, ponemos 0 para editar)
     sug_lotes = st.session_state.get('sug_lotes', 0.10)
-    # Buscamos las claves generadas en el Bloque 8 (CP, MP, LP)
-    sug_sl = st.session_state.get(f'sl_{tipo_est[:2]}', st.session_state.last_price * 0.95)
-    sug_tp = st.session_state.get(f'tp_{tipo_est[:2]}', st.session_state.last_price * 1.05)
+    sug_sl = st.session_state.get(f'sl_{tipo_est[:2]}', current_p * 0.98)
+    sug_tp = st.session_state.get(f'tp_{tipo_est[:2]}', current_p * 1.05)
 
     col_xtb, col_reg = st.columns([1, 2])
 
     with col_xtb:
-        st.markdown("#### 1. Lanzar en XTB")
-        ticker_limpio = st.session_state.ticker.replace("-USD", "").replace("=F", "")
+        st.markdown("#### 1. Ir a XTB")
+        ticker_limpio = ticker_actual.replace("-USD", "").replace("=F", "")
         xtb_url = f"https://xstation5.xtb.com/?symbol={ticker_limpio}"
         
-        st.link_button(f"⚡ ABRIR {ticker_limpio}", xtb_url, use_container_width=True, type="primary")
+        st.link_button(f"⚡ ABRIR {ticker_limpio} EN XTB", xtb_url, use_container_width=True, type="primary")
         
         st.markdown("---")
-        st.write("📋 **COPIAR A XTB:**")
-        
-        # Corregido: st.code sin el argumento 'caption'
-        st.write("Lotes:")
-        st.code(f"{sug_lotes}", language="text")
-        st.write("Stop Loss:")
-        st.code(f"{sug_sl:,.4f}", language="text")
-        st.write("Take Profit:")
-        st.code(f"{sug_tp:,.4f}", language="text")
+        st.write("📋 **COPIAR DATOS:**")
+        st.code(f"{sug_lotes}", language="text") # Lotes
+        st.code(f"{sug_sl:,.4f}", language="text") # SL
+        st.code(f"{sug_tp:,.4f}", language="text") # TP
 
     with col_reg:
-        st.markdown("#### 2. Confirmación Real")
-        with st.form("registro_confirmacion_v2"):
+        st.markdown("#### 2. Registro Real")
+        with st.form("registro_confirmacion_v3"):
             c1, c2 = st.columns(2)
             with c1:
-                p_entrada = st.number_input("Precio Real de Entrada", 
-                                            value=float(st.session_state.last_price), 
-                                            format="%.4f")
-                lotes = st.number_input("Lotes Reales", 
-                                        value=float(sug_lotes), 
-                                        step=0.01)
+                p_entrada = st.number_input("Precio Entrada", value=float(current_p), format="%.4f")
+                lotes_f = st.number_input("Lotes", value=float(sug_lotes), step=0.01)
             with c2:
-                sl_final = st.number_input("Stop Loss Real", 
-                                           value=float(sug_sl), 
-                                           format="%.4f")
-                tp_final = st.number_input("Take Profit Real", 
-                                           value=float(sug_tp), 
-                                           format="%.4f")
+                sl_f = st.number_input("Stop Loss", value=float(sug_sl), format="%.4f")
+                tp_f = st.number_input("Take Profit", value=float(sug_tp), format="%.4f")
             
-            submit = st.form_submit_button("🛰️ ACTIVAR VIGILANCIA REAL", use_container_width=True)
-            
-            if submit:
+            if st.form_submit_button("🛰️ ACTIVAR VIGILANCIA REAL", use_container_width=True):
                 nueva_op = {
-                    "ticker": st.session_state.ticker,
+                    "ticker": ticker_actual,
                     "modo": tipo_est,
                     "entrada": p_entrada,
-                    "lotes": lotes,
-                    "sl": sl_final,
-                    "tp": tp_final,
-                    "hora": pd.Timestamp.now().strftime('%H:%M:%S'),
+                    "lotes": lotes_f,
+                    "sl": sl_f,
+                    "tp": tp_f,
                     "status": "VIGILANDO"
                 }
-                
                 if 'active_trades' not in st.session_state:
                     st.session_state.active_trades = []
-                
                 st.session_state.active_trades.append(nueva_op)
-                st.success(f"✅ {ticker_limpio} en modo {tipo_est} bajo vigilancia.")
+                st.success(f"✅ Registrado. Monitor activo para {ticker_actual}")
 
-# Asegúrate de definir render_sentinel_intelligence antes o quitar la llamada si no la usas
-def render_sentinel_intelligence():
-    st.markdown("### 🧠 ANÁLISIS DE CONTEXTO")
-    st.caption("Verificando señales institucionales y volumen real...")
+# EJECUCIÓN FINAL
+render_sentinel_bridge()
