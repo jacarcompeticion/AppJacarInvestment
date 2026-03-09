@@ -204,78 +204,122 @@ if st.session_state.view == "Lobo":
                         st.session_state.ticker = data[0]
                         st.session_state.ticker_name = name
                     st.markdown('</div>', unsafe_allow_html=True)
-
+# =========================================================
+# BLOQUE 6: DATA ENGINE (MOTOR DE SINCRONIZACIÓN)
+# =========================================================
+import yfinance as yf
+import pandas as pd
+import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+def get_market_data(ticker, interval='1h', period='7d'):
+    """Descarga, limpia y sincroniza precios estilo Investing/XTB."""
+    try:
+        # Descarga desde Yahoo Finance (Sincronizado con tickers de XTB)
+        data = yf.download(ticker, period=period, interval=interval, progress=False)
+        
+        if data.empty:
+            st.error(f"❌ No hay datos para {ticker}. Revisa el símbolo (ej: NQ=F, GC=F).")
+            return None
+
+        # Limpieza de columnas Multi-Index si existen
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+
+        # Procesamiento y almacenamiento en sesión
+        df = data.dropna().copy()
+        
+        if not df.empty:
+            # Guardamos el último precio para los cálculos de los Bloques 8, 9 y 10
+            st.session_state.last_price = float(df['Close'].iloc[-1])
+            st.session_state.df_analisis = df
+            st.session_state.ticker = ticker
+            
+        return df
+
+    except Exception as e:
+        st.error(f"⚠️ Error en Motor de Datos (B6): {str(e)}")
+        return None
+
+# ---------------------------------------------------------
+# BLOQUE 7: RADAR SENTINEL (GRÁFICO + NIVELES REALES XTB)
+# ---------------------------------------------------------
 def render_shielded_chart(df, ticker_actual):
-    if df is None or df.empty:
-        st.warning("⚠️ No hay datos disponibles para generar el gráfico.")
+    """Dibuja el radar con volumen y líneas de ejecución real."""
+    if df is None or len(df) == 0:
+        st.warning(f"📡 Buscando señal de mercado para {ticker_actual}...")
         return
 
-    # 1. Configuración de la Figura (Velas + Volumen)
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.03, subplot_titles=(f'Gráfico Sentinel: {ticker_actual}', 'Volumen'), 
-                        row_width=[0.2, 0.7])
+    try:
+        # Configuración de subplots (Precio 80%, Volumen 20%)
+        fig = make_subplots(
+            rows=2, cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.05, 
+            row_width=[0.2, 0.8],
+            subplot_titles=(f'RADAR SENTINEL: {ticker_actual}', 'VOLUMEN REAL')
+        )
 
-    # Velas Japonesas
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'],
-        low=df['Low'], close=df['Close'], name='Precio',
-        increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
-    ), row=1, col=1)
+        # 1. VELAS JAPONESAS
+        fig.add_trace(go.Candlestick(
+            x=df.index, open=df['Open'], high=df['High'],
+            low=df['Low'], close=df['Close'], name='Market',
+            increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+        ), row=1, col=1)
 
-    # Volumen
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volumen', marker_color='#333'), row=2, col=1)
+        # 2. VOLUMEN
+        fig.add_trace(go.Bar(
+            x=df.index, y=df['Volume'], name='Vol',
+            marker_color='#444', opacity=0.5
+        ), row=2, col=1)
 
-    # 2. --- LÓGICA DE SINCRONIZACIÓN SENTINEL (OPERACIONES REALES) ---
-    # Buscamos en el estado de la sesión si hay operaciones para este ticker
-    if 'active_trades' in st.session_state:
-        for op in st.session_state.active_trades:
-            # Solo dibujamos si la operación coincide con el activo en pantalla
-            if op['ticker'] == ticker_actual:
-                # Línea de Entrada (Azul - Tu precio real de ejecución)
-                fig.add_hline(y=float(op['entrada']), 
-                              line_color="#0066ff", 
-                              line_dash="dash",
-                              annotation_text=f" 🔵 ENTRADA ({op['modo']})",
-                              annotation_position="top left",
-                              row=1, col=1)
-                
-                # Línea de Stop Loss (Rojo - Tu nivel de salida en pérdida)
-                fig.add_hline(y=float(op['sl']), 
-                              line_color="#ff3131", 
-                              line_dash="dot",
-                              annotation_text=" 🔴 SL REAL",
-                              annotation_position="bottom left",
-                              row=1, col=1)
-                
-                # Línea de Take Profit (Verde - Tu objetivo de beneficio)
-                fig.add_hline(y=float(op['tp']), 
-                              line_color="#00ff41", 
-                              line_dash="dot",
-                              annotation_text=" 🟢 TP REAL",
-                              annotation_position="top left",
-                              row=1, col=1)
+        # 3. --- CAPA DE OPERACIONES REALES (DESDE BLOQUE 9) ---
+        if 'active_trades' in st.session_state:
+            for op in st.session_state.active_trades:
+                # Solo dibujamos si estamos viendo el mismo activo que la orden
+                if op['ticker'] == ticker_actual:
+                    # Entrada Real (Azul)
+                    fig.add_hline(y=float(op['entrada']), line_color="#0066ff", 
+                                  line_dash="dash", annotation_text=f" 🔵 ENTRADA ({op['modo']})",
+                                  annotation_position="top left", row=1, col=1)
+                    
+                    # Stop Loss Real (Rojo)
+                    fig.add_hline(y=float(op['sl']), line_color="#ff3131", 
+                                  line_dash="dot", annotation_text=" 🔴 SL REAL",
+                                  annotation_position="bottom left", row=1, col=1)
+                    
+                    # Take Profit Real (Verde)
+                    fig.add_hline(y=float(op['tp']), line_color="#00ff41", 
+                                  line_dash="dot", annotation_text=" 🟢 TP REAL",
+                                  annotation_position="top left", row=1, col=1)
 
-    # 3. Personalización Estética (Estilo Dark Profesional)
-    fig.update_layout(
-        template="plotly_dark",
-        xaxis_rangeslider_visible=False,
-        height=600,
-        margin=dict(l=10, r=10, t=30, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
+        # Estética Pro-Dark
+        fig.update_layout(
+            template="plotly_dark",
+            xaxis_rangeslider_visible=False,
+            height=600,
+            margin=dict(l=10, r=10, t=40, b=10),
+            showlegend=False,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
 
-    # Ajuste de ejes para que el precio se vea claro
-    fig.update_yaxes(gridcolor='#222', zeroline=False)
-    fig.update_xaxes(gridcolor='#222', rangeslider_visible=False)
+        fig.update_yaxes(gridcolor='#1e1e1e', zeroline=False)
+        fig.update_xaxes(gridcolor='#1e1e1e')
 
-    # Renderizar en Streamlit
-    st.plotly_chart(fig, use_container_width=True, key=f"chart_v105_{ticker_actual}")
+        # Renderizar
+        st.plotly_chart(fig, use_container_width=True, key=f"radar_v105_{ticker_actual}")
 
-# --- EJECUCIÓN DEL BLOQUE ---
-    render_shielded_chart(df_analisis, st.session_state.ticker)
+    except Exception as e:
+        st.error(f"⚠️ Error en Radar Visual (B7): {str(e)}")
+
+# =========================================================
+# FIN DE INTEGRACIÓN B6 + B7
+# =========================================================
+
+df_actual = get_market_data(ticker_elegido)
+render_shielded_chart(df_actual, ticker_elegido)
 # =========================================================
 # BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
 # =========================================================
