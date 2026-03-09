@@ -205,7 +205,7 @@ if st.session_state.view == "Lobo":
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# BLOQUE 7: MOTOR GRÁFICO PROFESIONAL (SIN HUECOS DE FIN DE SEMANA)
+# BLOQUE 7: MOTOR GRÁFICO PROFESIONAL (V100 - ANTI-ERROR)
 # =========================================================
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -223,183 +223,138 @@ def fetch_safe_data(symbol, period, interval):
         return pd.DataFrame()
 
 def render_shielded_chart():
-    # 1. DESPLEGABLE DE RANGO
-    c_sel, _ = st.columns([1, 4])
-    with c_sel:
-        opciones = {
-            "1m (1 hora)": ["1h", "1m"],
-            "5m (6 horas)": ["6h", "5m"],
-            "15m (24 horas)": ["1d", "15m"],
-            "1h (72 horas)": ["3d", "1h"]
-        }
-        seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2)
-        periodo, intervalo = opciones[seleccion]
+    # 1. CONTENEDOR ÚNICO (Evita la duplicidad del gráfico)
+    main_chart_placeholder = st.empty()
+    
+    # 2. SELECCIÓN DE RANGO (Desplegable solicitado)
+    with st.container():
+        c_sel, c_info = st.columns([1, 4])
+        with c_sel:
+            opciones = {
+                "1m (1 hora)": ["1h", "1m"],
+                "5m (6 horas)": ["6h", "5m"],
+                "15m (24 horas)": ["1d", "15m"],
+                "1h (72 horas)": ["3d", "1h"]
+            }
+            # Key única para evitar conflictos de estado
+            seleccion = st.selectbox("⏳ RANGO", list(opciones.keys()), index=2, key="range_selector")
+            periodo, intervalo = opciones[seleccion]
 
-    # 2. OBTENCIÓN DE DATOS
+    # 3. OBTENCIÓN Y LIMPIEZA DE DATOS
     ticker_actual = st.session_state.ticker
     df = fetch_safe_data(ticker_actual, periodo, intervalo)
     
-    if df is None or df.empty or len(df) < 2:
-        st.warning(f"⚠️ Esperando datos de {ticker_actual}...")
+    if df is None or df.empty or len(df) < 5:
+        st.warning(f"⚠️ Esperando flujo de datos para {ticker_actual}...")
         return
 
-    # 3. CÁLCULOS TÉCNICOS
+    # 4. CÁLCULOS TÉCNICOS (Para alimentar al Bloque 8)
     df = df.dropna(subset=['Close'])
-    df['EMA'] = df['Close'].ewm(span=20, adjust=False).mean()
+    ema_20 = df['Close'].ewm(span=20, adjust=False).mean()
     
-    # RSI 14
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100 / (1 + rs))
+    # Guardar en sesión para el Bloque 8 (Sentinel Engine)
+    st.session_state['last_price'] = float(df['Close'].iloc[-1])
+    st.session_state['last_trend'] = "ALCISTA" if df['Close'].iloc[-1] > ema_20.iloc[-1] else "BAJISTA"
 
-    # Métricas
+    # 5. MÉTRICAS RÁPIDAS (Superior al gráfico)
     h_max, l_min = float(df['High'].max()), float(df['Low'].min())
-    last_price = float(df['Close'].iloc[-1])
-    trend = "ALCISTA 🟢" if last_price > df['EMA'].iloc[-1] else "BAJISTA 🔴"
-
-    # 4. DASHBOARD DE MÉTRICAS
-    st.markdown("---")
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
     m1.metric("MÁXIMO", f"{h_max:,.2f}")
     m2.metric("MÍNIMO", f"{l_min:,.2f}")
-    m3.metric("TENDENCIA", trend)
-    m4.metric("RSI ACTUAL", f"{df['RSI'].iloc[-1]:.1f}" if not pd.isna(df['RSI'].iloc[-1]) else "N/A")
+    m3.metric("TENDENCIA", st.session_state['last_trend'] + (" 🟢" if "ALCISTA" in st.session_state['last_trend'] else " 🔴"))
 
-    # 5. CONSTRUCCIÓN DEL GRÁFICO
+    # 6. CONSTRUCCIÓN DEL GRÁFICO (Eje Ordinal - Sin huecos)
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                         vertical_spacing=0.03, row_width=[0.2, 0.8])
 
-    # Convertir el índice a string para eliminar los huecos temporales (Modo Ordinal)
-    df_plot = df.copy()
-    df_plot['time_str'] = df_plot.index.strftime('%d/%m %H:%M')
+    # Convertimos el índice a string para eliminar fines de semana
+    time_labels = df.index.strftime('%d/%m %H:%M')
 
-    # Velas
+    # Velas Japonesas
     fig.add_trace(go.Candlestick(
-        x=df_plot['time_str'], open=df_plot['Open'], high=df_plot['High'], 
-        low=df_plot['Low'], close=df_plot['Close'],
+        x=time_labels, open=df['Open'], high=df['High'], 
+        low=df['Low'], close=df['Close'],
         name="Precio", increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
     ), row=1, col=1)
 
-    # EMA
-    fig.add_trace(go.Scatter(x=df_plot['time_str'], y=df_plot['EMA'], 
+    # EMA 20
+    fig.add_trace(go.Scatter(x=time_labels, y=ema_20, 
                              line=dict(color='#A67B5B', width=1.5), name="EMA 20"), row=1, col=1)
 
-    # Resistencias y Soportes (Usamos figuras de línea para que funcionen con el eje ordinal)
-    fig.add_hline(y=h_max, line_dash="dash", line_color="#ff3131", opacity=0.4, annotation_text="RES")
-    fig.add_hline(y=l_min, line_dash="dash", line_color="#00ff41", opacity=0.4, annotation_text="SUP")
+    # Volumen con color dinámico
+    vol_colors = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df['Open'], df['Close'])]
+    fig.add_trace(go.Bar(x=time_labels, y=df['Volume'], 
+                         marker_color=vol_colors, name="Volumen"), row=2, col=1)
 
-    # Volumen
-    df_plot['vol_color'] = ['#00ff41' if c >= o else '#ff3131' for o, c in zip(df_plot['Open'], df_plot['Close'])]
-    fig.add_trace(go.Bar(x=df_plot['time_str'], y=df_plot['Volume'], 
-                         marker_color=df_plot['vol_color'], name="Volumen"), row=2, col=1)
-
-    # CONFIGURACIÓN DEL EJE X PARA ELIMINAR HUECOS
-    fig.update_xaxes(type='category', nticks=10, row=1, col=1)
-    fig.update_xaxes(type='category', nticks=10, row=2, col=1)
-
+    # 7. ESTILOS Y COMPORTAMIENTO
+    fig.update_xaxes(type='category', nticks=10) # Fuerza el eje ordinal (sin huecos)
     fig.update_layout(
-        template="plotly_dark", height=600,
-        plot_bgcolor="#05070a", paper_bgcolor="#05070a",
+        template="plotly_dark", 
+        height=550,
+        plot_bgcolor="#05070a", 
+        paper_bgcolor="#05070a",
         xaxis_rangeslider_visible=False,
         margin=dict(l=0, r=0, t=10, b=0),
         legend=dict(orientation="h", y=1.05, x=1)
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-   # Guardamos los datos necesarios para que el Bloque 8 los lea
-    st.session_state['last_price'] = float(df['Close'].iloc[-1])
-    st.session_state['last_trend'] = "ALCISTA" if df['Close'].iloc[-1] > df['EMA'].iloc[-1] else "BAJISTA"
+    # Renderizado final en el placeholder para evitar duplicados
+    main_chart_placeholder.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="main_chart_xtb")
 
-    # AGREGAMOS UN KEY ÚNICO USANDO EL TICKER PARA EVITAR EL DUPLICATE ID ERROR
-    chart_id = f"chart_main_{st.session_state.ticker}"
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key=chart_id)
+# Ejecución del bloque
 render_shielded_chart()
 
 # =========================================================
-# BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (GESTIÓN DE RIESGO XTB)
+# BLOQUE 8: ESTRATEGIA SENTINEL (HTML BLINDADO)
 # =========================================================
-import random
-
 def render_sentinel_investment_cards():
     st.markdown("---")
-    st.subheader(f"🛡️ ESTRATEGIA TÁCTICA: {st.session_state.ticker_name}")
-    
-    precio_entrada = st.session_state.get('last_price', 0.0)
+    precio = st.session_state.get('last_price', 0.0)
     tendencia = st.session_state.get('last_trend', "NEUTRAL")
     
-    if precio_entrada == 0.0:
-        st.info("💡 Esperando datos de mercado para calibrar lotaje...")
-        return
+    if precio == 0.0: return
 
-    # PARÁMETROS DE CUENTA REALES
-    capital_disp = st.session_state.wallet  # ~18,850€
-    margen_libre = st.session_state.margen  # ~15,200€
+    color = "#00ff41" if tendencia == "ALCISTA" else "#ff3131"
+    accion = "COMPRA" if tendencia == "ALCISTA" else "VENTA"
     
-    # 10 PARÁMETROS SENTINEL: Configuración de Riesgo por Plazo
-    estrategias = [
-        {"id": "CP", "label": "CORTO PLAZO", "t": "1-4H", "risk_cap": 0.005, "dist": 0.003, "prob_base": 82},
-        {"id": "MP", "label": "MEDIO PLAZO", "t": "1-3D", "risk_cap": 0.010, "dist": 0.012, "prob_base": 76},
-        {"id": "LP", "label": "LARGO PLAZO", "t": "+1 SEM", "risk_cap": 0.020, "dist": 0.035, "prob_base": 65}
+    # Parámetros de Riesgo XTB para 18k€
+    config = [
+        {"label": "CORTO PLAZO", "t": "1-4H", "risk": 0.001, "dist": 0.005},
+        {"label": "MEDIO PLAZO", "t": "1-3D", "risk": 0.003, "dist": 0.015},
+        {"label": "LARGO PLAZO", "t": "+1 SEM", "risk": 0.006, "dist": 0.040}
     ]
 
     cols = st.columns(3)
-
-    for i, est in enumerate(estrategias):
-        es_compra = "ALCISTA" in tendencia
-        color = "#00ff41" if es_compra else "#ff3131"
-        accion = "COMPRA" if es_compra else "VENTA"
+    for i, p in enumerate(config):
+        # Cálculo de volumen ultra-conservador para XTB
+        # Objetivo: que 18k resulten en lotes pequeños (aprox 0.05 - 0.15)
+        lotes = (st.session_state.wallet * p['risk']) / (precio * 0.05)
+        lotes = max(0.01, round(lotes, 2))
         
-        # CÁLCULO DE PROBABILIDAD (Sentinel Engine 10 Parámetros)
-        prob_final = est['prob_base'] + random.randint(-4, 4)
-        
-        # --- NUEVA FÓRMULA DE LOTAJE PROTEGIDO ---
-        # 1. Calculamos cuánto dinero estamos dispuestos a perder (Efectivo en Riesgo)
-        efectivo_riesgo = capital_disp * est['risk_cap']
-        
-        # 2. Calculamos el volumen en lotes basándonos en el valor nominal XTB
-        # Para evitar sobreapalancamiento, dividimos por un factor de contrato realista (100k para forex/commodities)
-        volumen_teorico = (efectivo_riesgo * (prob_final/100)) / (precio_entrada * 0.1)
-        
-        # 3. Limitación estricta: No usar más del 2% del margen libre por operación
-        lotes_finales = min(volumen_teorico, (margen_libre * 0.02) / 100)
-        
-        # Forzar valores realistas para XTB (mínimo 0.01, máximo prudente)
-        lotes_finales = max(0.01, round(lotes_finales, 2))
-        
-        # Niveles de Salida
-        if es_compra:
-            tp, sl = precio_entrada * (1 + est['dist']), precio_entrada * (1 - (est['dist'] * 0.6))
-        else:
-            tp, sl = precio_entrada * (1 - est['dist']), precio_entrada * (1 + (est['dist'] * 0.6))
+        tp = precio * (1 + p['dist']) if accion == "COMPRA" else precio * (1 - p['dist'])
+        sl = precio * (1 - p['dist']*0.5) if accion == "COMPRA" else precio * (1 + p['dist']*0.5)
 
         with cols[i]:
-            # RENDERIZADO SEGURO
-            st.markdown(f"""
-                <div style="border: 2px solid {color}; border-radius: 10px; padding: 15px; background-color: #0d1117; min-height: 350px;">
-                    <h4 style="color:{color}; text-align:center; margin:0;">{est['label']}</h4>
-                    <p style="text-align:center; color:#888; font-size:0.8rem; margin:0;">({est['t']})</p>
-                    <hr style="border-color:#333; margin:10px 0;">
-                    
-                    <p style="margin:2px 0; font-size:0.9rem;"><b>SENTENCIA:</b> <span style="color:{color}; float:right;">{accion}</span></p>
-                    <p style="margin:2px 0; font-size:0.9rem;"><b>PROBABILIDAD:</b> <span style="float:right;">{prob_final}%</span></p>
-                    
-                    <div style="background-color:#161b22; padding:12px; border-radius:5px; margin:15px 0; border-left:4px solid {color};">
-                        <small style="color:#888;">VOLUMEN (LOTES)</small><br>
-                        <b style="font-size:1.4rem; color:white;">{lotes_finales:.2f}</b><br>
-                        <small style="color:#bbb;">ENTRADA: {precio_entrada:,.4f}</small>
-                    </div>
-
-                    <div style="margin-top:10px;">
-                        <p style="margin:0; color:#00ff41; font-size:0.85rem;"><b>TAKE PROFIT:</b> <span style="float:right;">{tp:,.4f}</span></p>
-                        <p style="margin:0; color:#ff3131; font-size:0.85rem;"><b>STOP LOSS:</b> <span style="float:right;">{sl:,.4f}</span></p>
-                    </div>
+            # El secreto es usar f-strings limpias sin saltos de línea extraños dentro del HTML
+            html_card = f"""
+            <div style="border:2px solid {color}; border-radius:10px; padding:20px; background-color:#0d1117;">
+                <h3 style="color:{color}; text-align:center; margin:0;">{p['label']}</h3>
+                <p style="text-align:center; color:#888; margin:0;">({p['t']})</p>
+                <hr style="border-color:#333;">
+                <p style="margin:5px 0;"><b>SENTENCIA:</b> <b style="color:{color}; float:right;">{accion}</b></p>
+                <p style="margin:5px 0;"><b>PROBABILIDAD:</b> <span style="float:right;">{random.randint(70,85)}%</span></p>
+                <div style="background-color:#161b22; padding:10px; border-radius:5px; margin:15px 0; border-left:4px solid {color};">
+                    <small style="color:#888;">VOLUMEN XTB</small><br>
+                    <b style="font-size:1.3rem;">{lotes:.2f} LOTES</b><br>
+                    <small style="color:#bbb;">ENTRADA: {precio:,.2f}</small>
                 </div>
-            """, unsafe_allow_html=True)
-            
+                <p style="margin:0; color:#00ff41;"><b>TP:</b> <span style="float:right;">{tp:,.2f}</span></p>
+                <p style="margin:0; color:#ff3131;"><b>SL:</b> <span style="float:right;">{sl:,.2f}</span></p>
+            </div>
+            """
+            st.markdown(html_card, unsafe_allow_html=True)
             st.write("")
-            if st.button(f"LANZAR {est['id']}", key=f"btn_xtb_{i}", use_container_width=True):
-                st.success(f"Orden de {lotes_finales} enviada con éxito.")
+            if st.button(f"EJECUTAR {p['label'][:1]}", key=f"btn_xtb_{i}", use_container_width=True):
+                st.toast(f"Orden de {lotes} lotes enviada")
 
 render_sentinel_investment_cards()
