@@ -205,142 +205,119 @@ if st.session_state.view == "Lobo":
                         st.session_state.ticker_name = name
                     st.markdown('</div>', unsafe_allow_html=True)
 # =========================================================
-# BLOQUE 6: DATA ENGINE (MOTOR DE SINCRONIZACIÓN)
+# BLOQUE 6: MOTOR DE DATOS E INDICADORES (EMA & RSI)
 # =========================================================
 import yfinance as yf
 import pandas as pd
+import pandas_ta as ta  # Asegúrate de tenerlo: pip install pandas_ta
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-def get_market_data(ticker, interval='1h', period='7d'):
-    """Descarga, limpia y sincroniza precios estilo Investing/XTB."""
+def get_market_data(ticker, interval='1h'):
+    # Ajustamos el periodo según el intervalo para el zoom automático
+    period_map = {'1m': '1d', '5m': '1d', '15m': '3d', '1h': '7d', '1d': '60d'}
+    period = period_map.get(interval, '7d')
+    
     try:
-        # Descarga desde Yahoo Finance (Sincronizado con tickers de XTB)
         data = yf.download(ticker, period=period, interval=interval, progress=False)
+        if data.empty: return None
+        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         
-        if data.empty:
-            st.error(f"❌ No hay datos para {ticker}. Revisa el símbolo (ej: NQ=F, GC=F).")
-            return None
-
-        # Limpieza de columnas Multi-Index si existen
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        # Procesamiento y almacenamiento en sesión
         df = data.dropna().copy()
         
+        # --- CÁLCULO DE INDICADORES ---
+        # EMA de 20 periodos (Tendencia rápida)
+        df['EMA_20'] = ta.ema(df['Close'], length=20)
+        # RSI de 14 periodos (Fuerza del mercado)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        
         if not df.empty:
-            # Guardamos el último precio para los cálculos de los Bloques 8, 9 y 10
             st.session_state.last_price = float(df['Close'].iloc[-1])
             st.session_state.df_analisis = df
             st.session_state.ticker = ticker
-            
         return df
-
     except Exception as e:
-        st.error(f"⚠️ Error en Motor de Datos (B6): {str(e)}")
+        st.error(f"Error B6: {e}")
         return None
 
-# ---------------------------------------------------------
-# BLOQUE 7: RADAR SENTINEL (GRÁFICO + NIVELES REALES XTB)
-# ---------------------------------------------------------
+# =========================================================
+# BLOQUE 7: RADAR VISUAL (CONTROLES SUPERIORES + INDICADORES)
+# =========================================================
 def render_shielded_chart(df, ticker_actual):
-    """Dibuja el radar con volumen y líneas de ejecución real."""
     if df is None or len(df) == 0:
-        st.warning(f"📡 Buscando señal de mercado para {ticker_actual}...")
+        st.warning("📡 Buscando señal...")
         return
 
-    try:
-        # Configuración de subplots (Precio 80%, Volumen 20%)
-        fig = make_subplots(
-            rows=2, cols=1, 
-            shared_xaxes=True, 
-            vertical_spacing=0.05, 
-            row_width=[0.2, 0.8],
-            subplot_titles=(f'RADAR SENTINEL: {ticker_actual}', 'VOLUMEN REAL')
-        )
+    # --- 1. CONTROLES ENCIMA DEL GRÁFICO (Temporalidad) ---
+    c1, c2, _ = st.columns([1, 1, 3])
+    with c1:
+        nuevo_intervalo = st.selectbox("⏳ Rango:", ["1m", "5m", "15m", "1h", "1d"], index=3, key="int_top")
+    with c2:
+        st.write(f"🏷️ **{ticker_actual}**")
+        st.write(f"Price: {st.session_state.last_price:,.2f}")
 
-        # 1. VELAS JAPONESAS
-        fig.add_trace(go.Candlestick(
-            x=df.index, open=df['Open'], high=df['High'],
-            low=df['Low'], close=df['Close'], name='Market',
-            increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
-        ), row=1, col=1)
+    # --- 2. CONFIGURACIÓN DEL GRÁFICO (3 Filas: Precio, RSI, Volumen) ---
+    fig = make_subplots(
+        rows=3, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.02, 
+        row_width=[0.1, 0.15, 0.75],
+        subplot_titles=("PRECIO & EMA", "RSI", "VOLUMEN")
+    )
 
-        # 2. VOLUMEN
-        fig.add_trace(go.Bar(
-            x=df.index, y=df['Volume'], name='Vol',
-            marker_color='#444', opacity=0.5
-        ), row=2, col=1)
+    # A. Velas Japonesas
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        name='Market', increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
+    ), row=1, col=1)
 
-        # 3. --- CAPA DE OPERACIONES REALES (DESDE BLOQUE 9) ---
-        if 'active_trades' in st.session_state:
-            for op in st.session_state.active_trades:
-                # Solo dibujamos si estamos viendo el mismo activo que la orden
-                if op['ticker'] == ticker_actual:
-                    # Entrada Real (Azul)
-                    fig.add_hline(y=float(op['entrada']), line_color="#0066ff", 
-                                  line_dash="dash", annotation_text=f" 🔵 ENTRADA ({op['modo']})",
-                                  annotation_position="top left", row=1, col=1)
-                    
-                    # Stop Loss Real (Rojo)
-                    fig.add_hline(y=float(op['sl']), line_color="#ff3131", 
-                                  line_dash="dot", annotation_text=" 🔴 SL REAL",
-                                  annotation_position="bottom left", row=1, col=1)
-                    
-                    # Take Profit Real (Verde)
-                    fig.add_hline(y=float(op['tp']), line_color="#00ff41", 
-                                  line_dash="dot", annotation_text=" 🟢 TP REAL",
-                                  annotation_position="top left", row=1, col=1)
+    # B. EMA 20 (Línea Amarilla sobre el precio)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['EMA_20'], line=dict(color='#FFD700', width=1.5),
+        name='EMA 20', opacity=0.8
+    ), row=1, col=1)
 
-        # Estética Pro-Dark
-        fig.update_layout(
-            template="plotly_dark",
-            xaxis_rangeslider_visible=False,
-            height=600,
-            margin=dict(l=10, r=10, t=40, b=10),
-            showlegend=False,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)'
-        )
+    # C. RSI (Panel intermedio)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['RSI'], line=dict(color='#8A2BE2', width=2), name='RSI'
+    ), row=2, col=1)
+    # Líneas de sobrecompra/sobreventa
+    fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.3, row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.3, row=2, col=1)
 
-        fig.update_yaxes(gridcolor='#1e1e1e', zeroline=False)
-        fig.update_xaxes(gridcolor='#1e1e1e')
+    # D. Volumen
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color='#444', name='Vol'), row=3, col=1)
 
-        # Renderizar
-        st.plotly_chart(fig, use_container_width=True, key=f"radar_v105_{ticker_actual}")
+    # --- 3. NIVELES REALES XTB (DESDE B9) ---
+    if 'active_trades' in st.session_state:
+        for op in st.session_state.active_trades:
+            if op['ticker'] == ticker_actual:
+                fig.add_hline(y=float(op['entrada']), line_color="#0066ff", line_dash="dash", row=1, col=1)
+                fig.add_hline(y=float(op['sl']), line_color="#ff3131", line_dash="dot", row=1, col=1)
+                fig.add_hline(y=float(op['tp']), line_color="#00ff41", line_dash="dot", row=1, col=1)
 
-    except Exception as e:
-        st.error(f"⚠️ Error en Radar Visual (B7): {str(e)}")
+    # --- 4. ZOOM DINÁMICO & ESTÉTICA ---
+    fig.update_layout(
+        template="plotly_dark", height=750, xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=30, b=10), showlegend=False
+    )
+    fig.update_yaxes(gridcolor='#1e1e1e', zeroline=False)
+    
+    st.plotly_chart(fig, use_container_width=True)
+    return nuevo_intervalo
 
+# --- LÓGICA DE EJECUCIÓN ---
+ticker_final = st.session_state.get('ticker', 'NQ=F') # Por defecto Nasdaq
+# El intervalo se controla desde el selector encima del gráfico
+intervalo_actual = st.session_state.get('int_top', '1h')
+
+df_final = get_market_data(ticker_final, interval=intervalo_actual)
+render_shielded_chart(df_final, ticker_final)
 # =========================================================
 # FIN DE INTEGRACIÓN B6 + B7
 # =========================================================
-# =========================================================
-# LÓGICA DE EJECUCIÓN (CONECTANDO B6 Y B7)
-# =========================================================
 
-# 1. Creamos el selector de activos (Tickers estilo Investing/XTB)
-st.sidebar.header("🔍 Configuración de Mercado")
-ticker_elegido = st.sidebar.selectbox(
-    "Selecciona Activo:",
-    ["NQ=F", "ES=F", "GC=F", "CL=F", "EURUSD=X", "GBPUSD=X", "BTC-USD"],
-    index=0,
-    help="NQ=Nasdaq, ES=S&P500, GC=Oro, CL=Petróleo, EURUSD=Euro/Dólar"
-)
-
-# 2. Selector de temporalidad
-intervalo = st.sidebar.selectbox("Temporalidad:", ["1m", "5m", "15m", "1h", "1d"], index=3)
-
-# 3. EJECUCIÓN DEL MOTOR (Bloque 6)
-df_actual = get_market_data(ticker_elegido, interval=intervalo)
-
-# 4. RENDERIZADO DEL RADAR (Bloque 7)
-if df_actual is not None:
-    render_shielded_chart(df_actual, ticker_elegido)
-else:
-    st.error("No se pudo establecer conexión con el servidor de datos.")
 # =========================================================
 # BLOQUE 8: MOTOR DE INVERSIÓN SENTINEL (CESTA DE ÓRDENES)
 # =========================================================
