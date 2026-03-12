@@ -13,7 +13,7 @@ from alpha_vantage.foreignexchange import ForeignExchange
 # =========================================================
 # 0. CONFIGURACIÓN Y MOTOR DE ALERTA
 # =========================================================
-AV_API_KEY = 3Y17BPSEURVNALDR # <--- IMPRESCINDIBLE PARA PRECISIÓN
+AV_API_KEY = "3Y17BPSEURVNALDR"
 
 if 'active_trades' not in st.session_state:
     st.session_state.active_trades = []
