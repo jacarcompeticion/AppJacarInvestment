@@ -146,44 +146,28 @@ def render_logic(df):
                 st.success("Enviado a Telegram")
 
 # =========================================================
-# 5. ORQUESTADOR DE NAVEGACIÓN
+# 5. ORQUESTADOR DE NAVEGACIÓN (CORREGIDO)
 # =========================================================
-# Header Metrics
-st.markdown(f'<div class="metric-card">CAPITAL: {st.session_state.wallet}€ | PnL: {st.session_state.pnl}€</div>', unsafe_allow_html=True)
+# Definimos los nombres de los botones y las vistas de destino
+btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
+v_list = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
 
-# Main Nav
-cols = st.columns(6)
+# Header Metrics (Resumen visual superior)
+st.markdown(f'<div class="metric-card">CAPITAL: {st.session_state.wallet:,.2f}€ | PnL: {st.session_state.pnl:,.2f}€</div>', unsafe_allow_html=True)
+
+# Renderizado de la barra de navegación principal
+nav_cols = st.columns(len(btns))
 for i, v in enumerate(v_list):
-    with cols[i]:
-        tag = "nav-active" if st.session_state.view == v else "nav-btn"
+    with nav_cols[i]:
+        # Verificamos si la vista actual coincide con el botón para resaltar el estilo
+        is_active = (st.session_state.view == v)
+        tag = "nav-active" if is_active else "nav-btn"
+        
         st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
-        if st.button(btns[i], key=f"n_{v}", use_container_width=True): st.session_state.view = v
+        if st.button(btns[i], key=f"nav_btn_{v}", use_container_width=True):
+            st.session_state.view = v
+            st.rerun() # Forzamos el refresco para cambiar de vista al instante
         st.markdown('</div>', unsafe_allow_html=True)
-
-# Lobo View logic
-if st.session_state.view == "Lobo":
-    # Categorías Cascada (Compacto para robustez)
-    c1, c2, c3 = st.columns(3)
-    with c1: 
-        cat = st.selectbox("Categoría", list(DATABASE.keys()))
-        st.session_state.active_cat = cat
-    with c2:
-        sub = st.selectbox("Subcategoría", list(DATABASE[cat].keys()))
-        st.session_state.active_sub = sub
-    with c3:
-        activo = st.selectbox("Activo", list(DATABASE[cat][sub].keys()))
-        st.session_state.ticker = DATABASE[cat][sub][activo][0]
-        st.session_state.ticker_name = activo
-
-    data = get_precise_data(st.session_state.ticker)
-    if data is not None:
-        render_radar(data, st.session_state.ticker_name)
-        render_logic(data)
-    else: st.error("Error de conexión con el servidor de datos Alpha Vantage.")
-
-elif st.session_state.view == "Noticias":
-    st.title("Feed de Noticias en Tiempo Real")
-    f = feedparser.parse("https://es.investing.com/rss/news.rss")
     for e in f.entries[:8]:
         with st.expander(e.title):
             st.write(e.summary)
