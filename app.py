@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit.components.v1 as components
 import feedparser
-
+## api: 3Y17BPSEURVNALDR
 # --- AQUÍ VA EL NUEVO IMPORT ---
 from streamlit_autorefresh import st_autorefresh
 
