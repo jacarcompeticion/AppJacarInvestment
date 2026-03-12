@@ -172,3 +172,60 @@ for i, v in enumerate(v_list):
         with st.expander(e.title):
             st.write(e.summary)
             if st.button("Notificar", key=e.link): send_telegram_alert(f"Noticia: {e.title}")
+# =========================================================
+# 6. ORQUESTADOR FINAL DE VISTAS (EL CEREBRO)
+# =========================================================
+
+if st.session_state.view == "Lobo":
+    # --- Interfaz de Trading Principal ---
+    c1, c2, c3 = st.columns(3)
+    with c1: 
+        cat = st.selectbox("Categoría", list(DATABASE.keys()))
+        st.session_state.active_cat = cat
+    with c2:
+        sub = st.selectbox("Subcategoría", list(DATABASE[cat].keys()))
+        st.session_state.active_sub = sub
+    with c3:
+        activo = st.selectbox("Activo", list(DATABASE[cat][sub].keys()))
+        st.session_state.ticker = DATABASE[cat][sub][activo][0]
+        st.session_state.ticker_name = activo
+
+    data = get_precise_data(st.session_state.ticker)
+    if data is not None:
+        render_radar(data, st.session_state.ticker_name)
+        render_logic(data)
+    else:
+        st.error("📡 Error de conexión. Verifica tu API Key de Alpha Vantage.")
+
+elif st.session_state.view == "Noticias":
+    # --- Interfaz de Noticias Blindada ---
+    st.markdown("<h1 style='text-align: center; color: #A67B5B;'>📰 TERMINAL DE NOTICIAS</h1>", unsafe_allow_html=True)
+    
+    try:
+        f = feedparser.parse("https://es.investing.com/rss/news.rss")
+        if not f.entries:
+            st.warning("No hay noticias disponibles en este momento.")
+        else:
+            for e in f.entries[:12]:
+                with st.container():
+                    st.markdown(f"""
+                    <div style="background:#0d1117; padding:15px; border-radius:10px; border-left:5px solid #A67B5B; margin-bottom:10px;">
+                        <h4 style="margin:0;">{e.title}</h4>
+                        <p style="font-size:0.9em; color:#ccc;">{e.summary.split('<')[0] if 'summary' in e else ''}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("📲 ENVIAR AL RADAR", key=e.link):
+                        send_telegram_alert(f"NOTICIA: {e.title}\n{e.link}")
+                        st.success("Noticia enviada")
+    except Exception as err:
+        st.error(f"Error al cargar el feed: {err}")
+
+elif st.session_state.view == "Ajustes":
+    st.title("⚙️ Configuración del Sistema")
+    st.session_state.wallet = st.number_input("Capital de la Cuenta (€)", value=st.session_state.wallet)
+    st.session_state.objetivo_semanal = st.number_input("Objetivo Semanal (€)", value=st.session_state.objetivo_semanal)
+    st.success("Configuración guardada en la sesión actual.")
+
+# Si presionas un botón de una vista que aún no hemos programado (Ratios, Predicciones, XTB)
+else:
+    st.info(f"La sección **{st.session_state.view}** está siendo calibrada para máxima precisión. Usa 'Lobo' o 'Noticias' por ahora.")
