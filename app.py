@@ -513,66 +513,7 @@ def render_strategy_cards(df):
                 st.session_state['ent_final'] = c['ent']
                 st.toast("Datos cargados en el Bridge")
 
-# =========================================================
-# BLOQUE 9: SENTINEL BRIDGE - REGISTRO Y VINCULACIÓN XTB
-# =========================================================
-def render_sentinel_bridge():
-    """
-    Calculadora financiera vinculada a XTB.
-    Corregido: Multiplicadores de contrato según X-Station 5.
-    """
-    st.markdown("---")
-    st.subheader("🚀 SENTINEL BRIDGE: CALCULADORA XTB PRO")
 
-    ticker_actual = st.session_state.get('ticker', 'NQ=F')
-    
-    # Matriz de Multiplicadores (Valor nominal del lote)
-    if any(x in ticker_actual for x in ["CL=F", "OIL", "NG=F"]): 
-        multiplier = 1000 # Petróleo
-    elif "=X" in ticker_actual: 
-        multiplier = 100000 # Forex
-    elif any(x in ticker_actual for x in ["GC=F", "GOLD"]): 
-        multiplier = 100 # Oro
-    elif any(x in ticker_actual for x in ["NQ=F", "ES=F", "YM=F"]): 
-        multiplier = 20 # Índices USA
-    else: 
-        multiplier = 1
-
-    # Recuperación de datos desde session_state
-    sl_sug = st.session_state.get('sl_final', 0.0)
-    tp_sug = st.session_state.get('tp_final', 0.0)
-    ent_sug = st.session_state.get('ent_final', st.session_state.last_price)
-    lotes_sug = st.session_state.get('lotes_final', 0.10)
-
-    with st.form("registro_operacion_v95"):
-        c_in, c_res = st.columns([2, 1])
-        with c_in:
-            c1, c2 = st.columns(2)
-            ent_real = c1.number_input("Entrada Real", value=float(ent_sug))
-            lotes_real = c1.number_input("Volumen Lotes", value=float(lotes_sug))
-            sl_real = c2.number_input("Stop Loss Real", value=float(sl_sug))
-            tp_real = c2.number_input("Take Profit Real", value=float(tp_sug))
-
-        # Cálculo de riesgo monetario exacto
-        riesgo_€ = abs(ent_real - sl_real) * lotes_real * multiplier
-        ganancia_€ = abs(tp_real - ent_real) * lotes_real * multiplier
-        
-        with c_res:
-            st.markdown(f"""
-            <div style="background:#0d1117; padding:15px; border:1px solid #333; text-align:center;">
-                <p style="color:#888;">RIESGO ESTIMADO</p>
-                <h3 style="color:#ff3131;">-{riesgo_€:,.2f}€</h3>
-                <p style="color:#888;">BENEFICIO ESTIMADO</p>
-                <h3 style="color:#00ff41;">+{ganancia_€:,.2f}€</h3>
-            </div>
-            """, unsafe_allow_html=True)
-
-        if st.form_submit_button("🛰️ LANZAR VIGILANCIA CRÍTICA", use_container_width=True):
-            st.session_state.active_trades.append({
-                "ticker": ticker_actual, "entrada": ent_real, "sl": sl_real, "tp": tp_real, "lotes": lotes_real
-            })
-            send_telegram_alert(f"🚀 *NUEVA ORDEN*\n{ticker_actual}\nLotes: {lotes_real}\nSL: {sl_real}\nTP: {tp_real}")
-            st.rerun()
 
 # =========================================================
 # BLOQUE 10: MOTOR DE NOTICIAS Y ORQUESTADOR FINAL
