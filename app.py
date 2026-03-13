@@ -16,8 +16,12 @@ from streamlit_autorefresh import st_autorefresh
 TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
 TELEGRAM_CHAT_ID = "1296326413"
 
-# AQUÍ DEBES PONER TU CLAVE DE ALPHA VANTAGE
-AV_API_KEY = "3Y17BPSEURVNALDR"
+# Introduce tu clave aquí entre las comillas
+AV_API_KEY = "3Y17BPSEURVNALDR" 
+
+# Validación de seguridad para el usuario
+if AV_API_KEY == "3Y17BPSEURVNALDR":
+    st.sidebar.error("❌ FALTA AV_API_KEY EN EL CÓDIGO")
 
 # =========================================================
 # 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
@@ -611,75 +615,82 @@ def get_alpha_vantage_data(symbol):
         st.error(f"Error en fuente secundaria (AV): {e}")
         return None
 # =========================================================
-# BLOQUE 12: ANÁLISIS FUNDAMENTAL DE ACTIVOS (X-RAY)
+# BLOQUE 12: ANÁLISIS FUNDAMENTAL (DATA MINING)
 # =========================================================
 def render_fundamental_analysis(ticker):
-    """
-    Muestra el 'estado de salud' de una empresa usando Alpha Vantage Fundamental Data.
-    Solo se activa para la categoría de Stocks.
-    """
+    """Extrae métricas de salud financiera desde Alpha Vantage"""
     clean_t = ticker.split('=')[0].split('.')[0]
     
-    # Contenedor con borde personalizado (Estilo Wolf)
-    st.markdown(f"""
-    <div style="border: 1px solid #A67B5B; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-        <h3 style="margin:0; color:#A67B5B;">🔍 FUNDAMENTALES: {clean_t}</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    
     try:
+        # Llamada directa a la API para datos de resumen
         url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={clean_t}&apikey={AV_API_KEY}"
-        data = requests.get(url).json()
+        data = requests.get(url, timeout=5).json()
         
         if data and "Symbol" in data:
+            st.markdown(f"#### 📊 Análisis de Empresa: {data.get('Name')}")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("PER Ratio", data.get('PERatio', 'N/A'))
-            c2.metric("EBITDA", f"{float(data.get('EBITDA', 0))/1e9:.2f}B" if data.get('EBITDA') != 'None' else 'N/A')
-            c3.metric("P/Book", data.get('PriceToBookRatio', 'N/A'))
-            c4.metric("Profit Margin", f"{float(data.get('ProfitMargin', 0))*100:.2f}%")
+            c2.metric("PEG Ratio", data.get('PEGRatio', 'N/A'))
+            c3.metric("Dividend Yield", f"{float(data.get('DividendYield', 0))*100:.2f}%")
+            c4.metric("ROE", data.get('ReturnOnEquityTTM', 'N/A'))
             
-            with st.expander("📄 Descripción Corporativa"):
+            with st.expander("🔍 Detalles del Negocio"):
                 st.write(data.get('Description', 'No disponible.'))
+                st.caption(f"Sector: {data.get('Sector')} | Industria: {data.get('Industry')}")
         else:
-            st.info("ℹ️ Datos fundamentales no disponibles para este ticker en el tier gratuito.")
-    except:
-        st.caption("Esperando respuesta de datos corporativos...")
+            st.info("ℹ️ Datos fundamentales no disponibles para este activo (Tier Gratuito).")
+    except Exception as e:
+        st.caption(f"⚠️ Error de conexión fundamental: {e}")
 # =========================================================
-# BLOQUE 12: ANÁLISIS FUNDAMENTAL DE ACTIVOS (X-RAY)
+# BLOQUE 13: ORQUESTADOR FINAL DE ALTA DISPONIBILIDAD
 # =========================================================
-def render_fundamental_analysis(ticker):
-    """
-    Muestra el 'estado de salud' de una empresa usando Alpha Vantage Fundamental Data.
-    Solo se activa para la categoría de Stocks.
-    """
-    clean_t = ticker.split('=')[0].split('.')[0]
+def run_wolf_orchestrator():
+    """Controla el flujo de la app y previene el error removeChild"""
+    # 1. Recuperar contexto de sesión
+    t_active = st.session_state.get('ticker', 'NQ=F')
+    view = st.session_state.get('view', 'Lobo')
+    cat = st.session_state.get('active_cat', 'indices')
     
-    # Contenedor con borde personalizado (Estilo Wolf)
-    st.markdown(f"""
-    <div style="border: 1px solid #A67B5B; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-        <h3 style="margin:0; color:#A67B5B;">🔍 FUNDAMENTALES: {clean_t}</h3>
-    </div>
-    """, unsafe_allow_html=True)
+    # 2. Contenedor Maestro Estabilizado
+    main_container = st.container()
     
+    with main_container:
+        if view == "Noticias":
+            render_sentinel_news(t_active)
+            
+        elif view in ["Lobo", "XTB"]:
+            # Mostrar fundamentales si es una acción
+            if cat == "stocks":
+                render_fundamental_analysis(t_active)
+            
+            # Obtención de datos técnicos (Yahoo Finance)
+            df = get_market_data(t_active, interval=st.session_state.get('int_top', '1h'))
+            
+            if df is not None:
+                st.session_state.last_price = float(df['Close'].iloc[-1])
+                render_shielded_chart(df, t_active) # Bloque 7
+                render_strategy_cards(df)           # Bloque 8
+                render_sentinel_bridge()            # Bloque 9
+            else:
+                # Fallback a Alpha Vantage
+                st.warning("⚠️ Intentando conexión secundaria...")
+                df_av = get_alpha_vantage_data(t_active) # Bloque 11
+                if df_av is not None:
+                    render_shielded_chart(df_av, t_active)
+                else:
+                    st.error("🚨 Sin respuesta de servidores. Verifique su AV_API_KEY.")
+
+        elif view == "Ajustes":
+            st.title("⚙️ PANEL DE CONTROL")
+            st.info("Ajustes de latencia y riesgo Sentinel v.95 activos.")
+
+# EJECUCIÓN DEL NÚCLEO
+if __name__ == "__main__":
     try:
-        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={clean_t}&apikey={AV_API_KEY}"
-        data = requests.get(url).json()
-        
-        if data and "Symbol" in data:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("PER Ratio", data.get('PERatio', 'N/A'))
-            c2.metric("EBITDA", f"{float(data.get('EBITDA', 0))/1e9:.2f}B" if data.get('EBITDA') != 'None' else 'N/A')
-            c3.metric("P/Book", data.get('PriceToBookRatio', 'N/A'))
-            c4.metric("Profit Margin", f"{float(data.get('ProfitMargin', 0))*100:.2f}%")
-            
-            with st.expander("📄 Descripción Corporativa"):
-                st.write(data.get('Description', 'No disponible.'))
-        else:
-            st.info("ℹ️ Datos fundamentales no disponibles para este ticker en el tier gratuito.")
-    except:
-        st.caption("Esperando respuesta de datos corporativos...")
-
-
+        run_wolf_orchestrator()
+    except Exception as e:
+        # Este mensaje evita el 'Oh no' genérico y te da la pista del error
+        st.error(f"⚠️ ERROR CRÍTICO DE ARRANQUE: {e}")
 
 
 # =========================================================
