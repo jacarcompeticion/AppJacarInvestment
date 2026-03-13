@@ -26,6 +26,51 @@ if not AV_API_KEY or AV_API_KEY == "TU_API_KEY_AQUI":
     st.sidebar.error("❌ FALTA AV_API_KEY EN EL CÓDIGO")
 else:
     st.sidebar.success("✅ SISTEMA AV VINCULADO")
+
+# =========================================================
+# BLOQUE 0: SANEAMIENTO Y REINICIO DE EMERGENCIA
+# =========================================================
+def sanitize_session():
+    """Limpia residuos de memoria que causan errores de renderizado"""
+    # 1. Forzar claves de estado básicas si no existen
+    defaults = {
+        'view': 'Lobo',
+        'active_cat': 'indices',
+        'ticker': 'NQ=F',
+        'ticker_name': 'NASDAQ 100',
+        'wallet': 10000.0,
+        'margen': 5000.0,
+        'pnl': 0.0,
+        'active_trades': []
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+    # 2. Botón de Reset Total en el Sidebar (Solo visible si algo falla)
+    if st.sidebar.button("🧹 REPARAR NÚCLEO (RESET)"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.cache_data.clear()
+        st.rerun()
+
+# Llamada inmediata al sanador
+sanitize_session()
+
+# =========================================================
+# AJUSTE DE ESTABILIDAD EN EL RADAR (BLOQUE 7 MODIFICADO)
+# =========================================================
+# Busca tu función render_shielded_chart y asegúrate de que la 
+# llamada final a plotly sea exactamente así:
+
+def render_shielded_chart(df, ticker_actual):
+    # ... (todo tu código anterior del bloque 7) ...
+    
+    # CLAVE DINÁMICA ÚNICA: Esto evita el error removeChild al cambiar de activo
+    # Al añadir la longitud del dataframe a la key, forzamos un ID nuevo si los datos cambian
+    unique_id = f"radar_{ticker_actual}_{len(df)}"
+    st.plotly_chart(fig, use_container_width=True, key=unique_id)
 # =========================================================
 # 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
 # =========================================================
