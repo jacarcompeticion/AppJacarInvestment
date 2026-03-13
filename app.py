@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 #INICIO
-st.set_page_config(page_title="Wolf Sovereign V95 - Precision Mode", layout="wide", page_icon="🐺")
+st.set_page_config(page_title="WOLF SOVEREIGN v.95", layout="wide", initial_sidebar_state="collapsed", page_icon="🐺")
 # =========================================================
 # CONFIGURACIÓN DE CREDENCIALES Y APIS
 # =========================================================
@@ -75,7 +75,7 @@ def render_shielded_chart(df, ticker_actual):
 # 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
 # =========================================================
 # Refresco automático estable
-st_autorefresh(interval=15000, limit=None, key="sentinel_refresh_global")
+st_autorefresh(interval=15000, key="wolf_global_monitor_refresh")
 
 # Inicialización del estado de sesión
 if 'setup_complete' not in st.session_state:
@@ -440,12 +440,9 @@ else:
 # BLOQUE 7: RADAR VISUAL (VOLUMEN BICOLOR & CONTROLES)
 # =========================================================
 def render_shielded_chart(df, ticker_actual):
-    """
-    Renderiza el radar táctico Wolf con triple panel.
-    Corregido: Manejo de tipos para líneas XTB y estabilidad de keys.
-    """
+    """Renderiza el radar táctico Wolf con protección de Nodos"""
     if df is None or len(df) == 0:
-        st.warning("📡 Sincronizando radar de alta precisión...")
+        st.warning("📡 Sincronizando radar...")
         return
 
     # --- 1. CONTROLES SUPERIORES ---
@@ -521,7 +518,14 @@ def render_shielded_chart(df, ticker_actual):
     
     # Key dinámica para forzar renderizado limpio al cambiar de ticker
     st.plotly_chart(fig, use_container_width=True, key=f"chart_v95_{ticker_actual}_{st.session_state.get('int_top', '1h')}")
-
+chart_id = f"radar_node_{ticker_actual}_{len(df)}"
+    
+    st.plotly_chart(
+        fig, 
+        use_container_width=True, 
+        key=chart_id,
+        theme="streamlit" # Mantiene la estética integrada
+    )
 # =========================================================
 # BLOQUE 8: ESTRATEGIAS CON PRECISIÓN DINÁMICA
 # =========================================================
