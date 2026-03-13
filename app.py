@@ -10,6 +10,14 @@ import requests
 import time
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
+# =========================================================
+# CONFIGURACIÓN DE CREDENCIALES Y APIS
+# =========================================================
+TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
+TELEGRAM_CHAT_ID = "1296326413"
+
+# AQUÍ DEBES PONER TU CLAVE DE ALPHA VANTAGE
+AV_API_KEY = "3Y17BPSEURVNALDR"
 
 # =========================================================
 # 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
@@ -38,7 +46,6 @@ if 'setup_complete' not in st.session_state:
 
 # --- CONFIGURACIÓN DE ALERTAS (TELEGRAM) ---
 TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
-TELEGRAM_CHAT_ID = "1296326413"
 
 def send_telegram_alert(message):
     """Envío de alertas con reintentos para robustez extrema"""
@@ -516,98 +523,164 @@ def render_strategy_cards(df):
 
 
 # =========================================================
-# BLOQUE 10: MOTOR DE NOTICIAS & ORQUESTADOR INTEGRADO (AV + YF)
+# BLOQUE 10: MOTOR DE NOTICIAS & INTELIGENCIA DE SENTIMIENTO
 # =========================================================
 def render_sentinel_news(ticker):
     """
-    Motor híbrido de noticias: Combina RSS Global con IA de Alpha Vantage.
+    Motor híbrido de noticias con análisis de sentimiento Alpha Vantage.
+    Blindado contra errores de duplicidad de nodos (keys únicas).
     """
     st.markdown(f"## 📰 TERMINAL DE INTELIGENCIA: {ticker}")
     
-    # --- Fuente A: Alpha Vantage Market Intelligence ---
+    # --- INTERFAZ DE ALPHA VANTAGE (SENTIMIENTO) ---
     try:
-        # AV ofrece un endpoint de 'News Sentiment' muy potente
-        av_news_url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={AV_API_KEY}"
+        # Limpieza de ticker para Alpha Vantage
+        clean_ticker = ticker.split('=')[0].split('.')[0]
+        av_news_url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={clean_ticker}&apikey={AV_API_KEY}"
+        
         response = requests.get(av_news_url, timeout=5)
-        data = response.json()
+        news_data = response.json()
         
-        if "feed" in data:
-            st.subheader("🎯 Sentimiento de Mercado (Alpha Vantage)")
-            for item in data["feed"][:3]: # Top 3 noticias con sentimiento
-                col_n, col_s = st.columns([3, 1])
-                with col_n:
-                    st.markdown(f"**[{item['title']}]({item['url']})**")
-                with col_s:
-                    score = item.get('overall_sentiment_label', 'Neutral')
-                    st.code(f"SENT: {score}")
-    except:
-        st.caption("Nota: Inteligencia AV en espera (límite de tasa).")
+        if "feed" in news_data:
+            st.subheader("🎯 SENTIMIENTO DE MERCADO REAL")
+            # Usamos un contenedor estable para evitar el error removeChild
+            with st.container():
+                for i, item in enumerate(news_data["feed"][:4]):
+                    col_text, col_sent = st.columns([4, 1])
+                    with col_text:
+                        st.markdown(f"**[{item['title']}]({item['url']})**")
+                        st.caption(f"Fuente: {item['source']} | Relevancia: {item['relevance_score']}")
+                    with col_sent:
+                        sent_label = item.get('overall_sentiment_label', 'Neutral')
+                        color = "#00ff41" if "Bullish" in sent_label else "#ff3131" if "Bearish" in sent_label else "#888"
+                        st.markdown(f'<p style="color:{color}; font-weight:bold;">{sent_label}</p>', unsafe_allow_html=True)
+                    st.divider()
+    except Exception as e:
+        st.caption(f"⏳ Inteligencia AV: Esperando ventana de conexión... ({e})")
 
-    st.markdown("---")
-
-    # --- Fuente B: RSS Investing (Resiliencia) ---
-    f_data = None
+    # --- MOTOR DE RESPALDO RSS (INVESTING) ---
+    st.markdown("### 📡 ÚLTIMA HORA (GLOBAL RSS)")
     try:
-        f_data = feedparser.parse("https://es.investing.com/rss/news.rss")
-    except:
-        st.error("Error de enlace con Terminal RSS.")
-        return
-
-    if f_data and f_data.entries:
-        for i, entry in enumerate(f_data.entries[:5]):
-            with st.expander(f"┃ NOTICIA {i+1} ┃ {entry.title[:65]}..."):
-                st.write(entry.summary.split('<')[0] if 'summary' in entry else "Sin descripción.")
-                if st.button("Sincronizar Alerta", key=f"news_final_{i}"):
-                    send_telegram_alert(f"⚠️ NOTICIA CRÍTICA\n{entry.title}\n{entry.link}")
-                    st.toast("Enviado a Central")
-
-# --- ORQUESTADOR FINAL (EL CEREBRO DEL SISTEMA) ---
-def run_wolf_orchestrator():
+        f_news = feedparser.parse("https://es.investing.com/rss/news.rss")
+        if f_news and f_news.entries:
+            for i, entry in enumerate(f_news.entries[:6]):
+                # CLAVE ÚNICA BLINDADA: Evita el error de 'Node removeChild'
+                unique_key = f"rss_btn_{ticker}_{i}_{st.session_state.view}"
+                
+                with st.expander(f"📌 {entry.title[:70]}...", expanded=False):
+                    st.write(entry.summary.split('<')[0] if 'summary' in entry else "Contenido en terminal...")
+                    if st.button("Sincronizar con Telegram", key=unique_key):
+                        msg = f"🐺 *NOTICIA TRADING*\n{entry.title}\n{entry.link}"
+                        send_telegram_alert(msg)
+                        st.toast("Enviado a Central")
+    except Exception as e:
+        st.error(f"Fallo en la sincronización del feed RSS: {e}")
+# =========================================================
+# BLOQUE 11: MOTOR DE DATOS ALPHA VANTAGE (SISTEMA DUAL)
+# =========================================================
+def get_alpha_vantage_data(symbol):
     """
-    Gestiona la lógica de visualización y la integración de APIs duales.
-    Este bloque garantiza la estabilidad por encima de las 625 líneas.
+    Obtiene velas japonesas desde Alpha Vantage como fuente secundaria.
+    Garantiza robustez total si la fuente primaria (YF) es bloqueada.
     """
-    # 1. Recuperación de estado
-    t_active = st.session_state.get('ticker', 'NQ=F')
-    i_active = st.session_state.get('int_top', '1h')
-    view_active = st.session_state.get('view', 'Lobo')
-
-    # 2. Lógica de Pantallas
-    if view_active == "Noticias":
-        render_sentinel_news(t_active)
-    
-    elif view_active in ["Lobo", "XTB", "Predicciones"]:
-        # Primero: Intentamos obtener datos fundamentales si es una acción
-        if st.session_state.get('active_cat') == "stocks":
-            render_fundamental_analysis(t_active) # Bloque 12 previo
-
-        # Segundo: Motor de Precios (Yahoo Finance como primario por velocidad)
-        df_final = get_market_data(t_active, interval=i_active)
-        
-        if df_final is not None:
-            # Actualizamos el precio global para la calculadora
-            st.session_state.last_price = float(df_final['Close'].iloc[-1])
-            
-            # Renderizado de componentes tácticos
-            render_shielded_chart(df_final, t_active) # Bloque 7
-            render_strategy_cards(df_final)           # Bloque 8
-            render_sentinel_bridge()                  # Bloque 9
+    try:
+        # Conversión de símbolos para divisas/forex en AV
+        if "EURUSD" in symbol:
+            url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=EUR&to_symbol=USD&apikey={AV_API_KEY}&datatype=csv"
+        elif "GOLD" in symbol or "GC=F" in symbol:
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=GOLD&apikey={AV_API_KEY}&datatype=csv"
         else:
-            # Fallback a Alpha Vantage si Yahoo falla
-            st.warning("⚠️ Fuente primaria caída. Activando respaldo Alpha Vantage...")
-            df_av = get_alpha_vantage_data(t_active) # Bloque 11 previo
-            if df_av is not None:
-                render_shielded_chart(df_av, t_active)
-            else:
-                st.error("🚨 Error total de conexión con mercados mundiales.")
+            clean_s = symbol.split('=')[0].split('.')[0]
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_s}&apikey={AV_API_KEY}&datatype=csv"
+            
+        df_av = pd.read_csv(url)
+        df_av['timestamp'] = pd.to_datetime(df_av['timestamp'])
+        df_av.set_index('timestamp', inplace=True)
+        df_av.sort_index(ascending=True, inplace=True)
+        
+        # Estandarización de nombres de columnas
+        df_av.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+        
+        # Añadir indicadores básicos para no romper el Radar
+        df_av['EMA_20'] = ta.ema(df_av['Close'], length=20)
+        df_av['RSI'] = ta.rsi(df_av['Close'], length=14)
+        df_av['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' for c, o in zip(df_av['Close'], df_av['Open'])]
+        
+        return df_av
+    except Exception as e:
+        st.error(f"Error en fuente secundaria (AV): {e}")
+        return None
+# =========================================================
+# BLOQUE 12: ANÁLISIS FUNDAMENTAL DE ACTIVOS (X-RAY)
+# =========================================================
+def render_fundamental_analysis(ticker):
+    """
+    Muestra el 'estado de salud' de una empresa usando Alpha Vantage Fundamental Data.
+    Solo se activa para la categoría de Stocks.
+    """
+    clean_t = ticker.split('=')[0].split('.')[0]
+    
+    # Contenedor con borde personalizado (Estilo Wolf)
+    st.markdown(f"""
+    <div style="border: 1px solid #A67B5B; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <h3 style="margin:0; color:#A67B5B;">🔍 FUNDAMENTALES: {clean_t}</h3>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    try:
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={clean_t}&apikey={AV_API_KEY}"
+        data = requests.get(url).json()
+        
+        if data and "Symbol" in data:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("PER Ratio", data.get('PERatio', 'N/A'))
+            c2.metric("EBITDA", f"{float(data.get('EBITDA', 0))/1e9:.2f}B" if data.get('EBITDA') != 'None' else 'N/A')
+            c3.metric("P/Book", data.get('PriceToBookRatio', 'N/A'))
+            c4.metric("Profit Margin", f"{float(data.get('ProfitMargin', 0))*100:.2f}%")
+            
+            with st.expander("📄 Descripción Corporativa"):
+                st.write(data.get('Description', 'No disponible.'))
+        else:
+            st.info("ℹ️ Datos fundamentales no disponibles para este ticker en el tier gratuito.")
+    except:
+        st.caption("Esperando respuesta de datos corporativos...")
+# =========================================================
+# BLOQUE 12: ANÁLISIS FUNDAMENTAL DE ACTIVOS (X-RAY)
+# =========================================================
+def render_fundamental_analysis(ticker):
+    """
+    Muestra el 'estado de salud' de una empresa usando Alpha Vantage Fundamental Data.
+    Solo se activa para la categoría de Stocks.
+    """
+    clean_t = ticker.split('=')[0].split('.')[0]
+    
+    # Contenedor con borde personalizado (Estilo Wolf)
+    st.markdown(f"""
+    <div style="border: 1px solid #A67B5B; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <h3 style="margin:0; color:#A67B5B;">🔍 FUNDAMENTALES: {clean_t}</h3>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    try:
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={clean_t}&apikey={AV_API_KEY}"
+        data = requests.get(url).json()
+        
+        if data and "Symbol" in data:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("PER Ratio", data.get('PERatio', 'N/A'))
+            c2.metric("EBITDA", f"{float(data.get('EBITDA', 0))/1e9:.2f}B" if data.get('EBITDA') != 'None' else 'N/A')
+            c3.metric("P/Book", data.get('PriceToBookRatio', 'N/A'))
+            c4.metric("Profit Margin", f"{float(data.get('ProfitMargin', 0))*100:.2f}%")
+            
+            with st.expander("📄 Descripción Corporativa"):
+                st.write(data.get('Description', 'No disponible.'))
+        else:
+            st.info("ℹ️ Datos fundamentales no disponibles para este ticker en el tier gratuito.")
+    except:
+        st.caption("Esperando respuesta de datos corporativos...")
 
-    elif view_active == "Ajustes":
-        # Bloque de configuración ya definido
-        pass
 
-# Ejecución del orquestador
-if __name__ == "__main__":
-    run_wolf_orchestrator()
+
 
 # =========================================================
 # FINAL DEL ARCHIVO: WOLF SOVEREIGN PRECISION V95
