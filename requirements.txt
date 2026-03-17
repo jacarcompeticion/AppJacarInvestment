@@ -1,8 +1,9 @@
-yfinance
-pandas
-pandas_ta
-feedparser
-requests
-plotly
-streamlit-autorefresh
-alpha_vantage
+streamlit>=1.40.0
+yfinance>=0.2.50
+pandas>=2.2.0
+pandas-ta==0.3.14b0
+plotly>=6.0.0
+streamlit-autorefresh==1.0.1
+feedparser>=6.0.10
+requests>=2.31.0
+numpy<2.0.0
