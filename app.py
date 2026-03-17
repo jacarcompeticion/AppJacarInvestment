@@ -1,11 +1,19 @@
-yfinance
-pandas
-pandas_ta
-plotly
-feedparser
-requests
-streamlit-autorefresh
-st.set_page_config(page_title="Wolf Sovereign", layout="wide")
+import streamlit as st
+import os
+
+# --- PARCHE DE COMPATIBILIDAD PARA PANDAS-TA ---
+try:
+    import pandas_ta as ta
+except ImportError:
+    os.system('pip install pandas-ta==0.3.14b0')
+    import pandas_ta as ta
+
+import yfinance as yf
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import requests
+from streamlit_autorefresh import st_autorefresh
 # =========================================================
 # CONFIGURACIÓN DE CREDENCIALES Y APIS
 # =========================================================
