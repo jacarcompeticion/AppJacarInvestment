@@ -1,7 +1,6 @@
 streamlit>=1.40.0
 yfinance>=0.2.50
 pandas>=2.2.0
-pandas-ta==0.3.14b0
 plotly>=6.0.0
 streamlit-autorefresh==1.0.1
 feedparser>=6.0.10
