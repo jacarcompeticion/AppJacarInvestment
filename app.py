@@ -74,7 +74,7 @@ def render_shielded_chart(df, ticker_actual):
 # =========================================================
 # 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
 # =========================================================
-# Refresco automático estable
+# Esto evita que el contador se reinicie de forma errática
 st_autorefresh(interval=15000, key="wolf_global_monitor_refresh")
 
 # Inicialización del estado de sesión
@@ -370,10 +370,10 @@ for i, col in enumerate(nav_cols):
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- LÓGICA DE VISTAS ---
-if st.session_state.view == "Lobo":
-    # Fila 1: Categorías
-    cats = list(DATABASE.keys())
-    c_cat = st.columns(len(cats))
+if st.session_state.active_sub:
+    activos = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
+    # Usamos rejilla de 4 para evitar desbordamiento
+    cols_act = st.columns(4)
     for i, cat in enumerate(cats):
         tag = "menu-active" if st.session_state.active_cat == cat else "menu-btn"
         with c_cat[i]:
@@ -389,15 +389,21 @@ if st.session_state.view == "Lobo":
     if st.session_state.active_cat in DATABASE:
         subs = list(DATABASE[st.session_state.active_cat].keys())
         c_sub = st.columns(min(len(subs), 4)) 
-        for i, sub in enumerate(subs):
-            col_idx = i % 4
-            tag = "menu-active" if st.session_state.active_sub == sub else "menu-btn"
-            with c_sub[col_idx]:
-                st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
-                if st.button(sub, key=f"btn_sub_{sub}", use_container_width=True):
-                    st.session_state.active_sub = sub
-                    st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+        for i, (name, val) in enumerate(activos.items()):
+        col_idx = i % 4
+        is_active = st.session_state.ticker_name == name
+        tag = "menu-active" if is_active else "menu-btn"
+        
+        with cols_act[col_idx]:
+            st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
+            # CLAVE BLINDADA: Incluye categoría, sub y nombre para evitar duplicados
+            unique_btn_key = f"final_act_{st.session_state.active_cat}_{name}"
+            
+            if st.button(name, key=unique_btn_key, use_container_width=True):
+                st.session_state.ticker = val[0]
+                st.session_state.ticker_name = name
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # Fila 3: Activos Finales (Gestión de Grid segura)
         if st.session_state.active_sub in DATABASE[st.session_state.active_cat]:
@@ -526,7 +532,7 @@ chart_id = f"radar_node_{ticker_actual}_{len(df)}"
         key=chart_id,
         theme="streamlit" # Mantiene la estética integrada
     )
-# =========================================================
+#====================================================
 # BLOQUE 8: ESTRATEGIAS CON PRECISIÓN DINÁMICA
 # =========================================================
 def render_strategy_cards(df):
