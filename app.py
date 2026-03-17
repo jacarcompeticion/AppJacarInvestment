@@ -4,444 +4,199 @@ import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import streamlit.components.v1 as components
 import feedparser
 import requests
-import time
-from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
-#INICIO
+
+# =========================================================
+# BLOQUE 1: CONFIGURACIÓN DE NÚCLEO (SHIELDED)
+# =========================================================
 st.set_page_config(page_title="WOLF SOVEREIGN v.95", layout="wide", initial_sidebar_state="collapsed", page_icon="🐺")
-# =========================================================
-# CONFIGURACIÓN DE CREDENCIALES Y APIS
-# =========================================================
+
+# Refresco cada 15 segundos con clave persistente
+st_autorefresh(interval=15000, key="wolf_global_monitor_refresh")
+
+# Credenciales
 TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
 TELEGRAM_CHAT_ID = "1296326413"
-
-# Clave Alpha Vantage (Verificada sin espacios extra)
 AV_API_KEY = "3Y17BPSEURVNALDR"
 
-# Validación de seguridad corregida
-if not AV_API_KEY or AV_API_KEY == "TU_API_KEY_AQUI":
-    st.sidebar.error("❌ FALTA AV_API_KEY EN EL CÓDIGO")
-else:
-    st.sidebar.success("✅ SISTEMA AV VINCULADO")
-
 # =========================================================
-# BLOQUE 0: SANEAMIENTO Y REINICIO DE EMERGENCIA
+# BLOQUE 2: SANEAMIENTO Y ESTADO DE SESIÓN
 # =========================================================
 def sanitize_session():
-    """Limpia residuos de memoria que causan errores de renderizado"""
-    # 1. Forzar claves de estado básicas si no existen
     defaults = {
         'view': 'Lobo',
         'active_cat': 'indices',
+        'active_sub': 'EEUU',
         'ticker': 'NQ=F',
-        'ticker_name': 'NASDAQ 100',
-        'wallet': 10000.0,
-        'margen': 5000.0,
-        'pnl': 0.0,
-        'active_trades': []
-    }
-    
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-
-    # 2. Botón de Reset Total en el Sidebar (Solo visible si algo falla)
-    if st.sidebar.button("🧹 REPARAR NÚCLEO (RESET)"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.cache_data.clear()
-        st.rerun()
-
-# Llamada inmediata al sanador
-sanitize_session()
-
-# =========================================================
-# AJUSTE DE ESTABILIDAD EN EL RADAR (BLOQUE 7 MODIFICADO)
-# =========================================================
-# Busca tu función render_shielded_chart y asegúrate de que la 
-# llamada final a plotly sea exactamente así:
-
-def render_shielded_chart(df, ticker_actual):
-    # ... (todo tu código anterior del bloque 7) ...
-    
-    # CLAVE DINÁMICA ÚNICA: Esto evita el error removeChild al cambiar de activo
-    # Al añadir la longitud del dataframe a la key, forzamos un ID nuevo si los datos cambian
-    unique_id = f"radar_{ticker_actual}_{len(df)}"
-    st.plotly_chart(fig, use_container_width=True, key=unique_id)
-# =========================================================
-# 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
-# =========================================================
-# Esto evita que el contador se reinicie de forma errática
-st_autorefresh(interval=15000, key="wolf_global_monitor_refresh")
-
-# Inicialización del estado de sesión
-if 'setup_complete' not in st.session_state:
-    st.session_state.update({
-        'view': "Lobo",
-        'active_cat': "indices",
-        'active_sub': "EEUU",
-        'ticker': "NQ=F",
-        'ticker_name': "US100 (Nasdaq) 🇺🇸",
+        'ticker_name': 'US100 (Nasdaq) 🇺🇸',
         'wallet': 18850.00,
         'margen': 15200.00,
         'pnl': 420.50,
         'last_price': 0.0,
-        'active_trades': [],
-        'sl_final': 0.0,
-        'tp_final': 0.0,
-        'lotes_final': 0.10,
-        'setup_complete': True
-    })
-
-# --- SISTEMA DE ALERTAS ---
-# Aseguramos que las variables existan para evitar NameError
-def send_telegram_alert(message):
-    """Envío de alertas blindado"""
-    try:
-        # Usamos las variables globales definidas en el Bloque 0
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-        requests.post(url, json=payload, timeout=5)
-    except Exception as e:
-        st.sidebar.error(f"Error de comunicación Telegram: {e}")
-# =========================================================
-# 2. MOTOR DE ESTILOS WOLF SOVEREIGN (UI PREMIUM)
-# =========================================================
-
-# NOTA: Esta línea DEBE ir al principio de tu archivo app.py, 
-# justo debajo de los imports para evitar que la página se caiga.
-try:
-    st.set_page_config(page_title="Wolf Sovereign V95 - Precision Mode", layout="wide", page_icon="🐺")
-except:
-    pass # Si ya se ejecutó, evitamos el error crítico
-
-st.markdown("""
-    <style>
-    .stApp { background-color: #05070a; }
-    [data-testid="stVerticalBlock"] { gap: 0rem !important; }
-    
-    /* NAV SUPERIOR: MARRÓN -> BLANCO */
-    div.nav-btn button {
-        background-color: #A67B5B !important; color: #000 !important;
-        border: 1px solid #000 !important; border-radius: 0px !important; height: 3.5em !important;
+        'int_top': '1h'
     }
-    div.nav-active button {
-        background-color: #FFFFFF !important; color: #000 !important;
-        border: 2px solid #000 !important; font-weight: 900 !important; height: 3.5em !important;
-    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-    /* MENÚ CASCADA: BLANCO -> NEGRO */
-    div.menu-btn button {
-        background-color: #FFFFFF !important; color: #000 !important;
-        border: 1px solid #333 !important; border-radius: 0px !important; height: 3.2em !important;
-    }
-    div.menu-active button {
-        background-color: #000000 !important; color: #FFFFFF !important;
-        border: 1px solid #FFFFFF !important; font-weight: bold !important; height: 3.2em !important;
-    }
-
-    .metric-container {
-        background-color: #0d1117; padding: 10px; border-bottom: 2px solid #A67B5B;
-        display: flex; justify-content: space-around; color: #A67B5B; font-weight: bold;
-    }
-    
-    /* TICKER ANIMATION */
-    .ticker-wrap { width: 100%; overflow: hidden; background: #000; padding: 10px 0; border-bottom: 1px solid #333; }
-    .ticker-move { display: flex; width: fit-content; animation: ticker 40s linear infinite; }
-    .ticker-item { padding: 0 40px; white-space: nowrap; font-family: 'Courier New', monospace; color: #fff; }
-    @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-    </style>
-    """, unsafe_allow_html=True)
+sanitize_session()
 
 # =========================================================
-# 3. BASE DE DATOS ESTRUCTURADA (MÉTODO CASCADA)
+# BLOQUE 3: BASE DE DATOS ESTRUCTURADA
 # =========================================================
-# Categorías estrictamente separadas: stocks, indices, material, divisas
 DATABASE = {
     "stocks": {
         "TECNOLOGÍA": {
-            "APPLE (AAPL.US) 🍎": ["AAPL", "123"], 
-            "TESLA (TSLA.US) ⚡": ["TSLA", "124"], 
-            "NVIDIA (NVDA.US) 🟢": ["NVDA", "125"], 
-            "AMAZON (AMZN.US) 📦": ["AMZN", "126"],
-            "META (META.US) 📱": ["META", "127"], 
-            "MICROSOFT (MSFT.US) 💻": ["MSFT", "128"]
+            "APPLE (AAPL) 🍎": ["AAPL", "123"], "TESLA (TSLA) ⚡": ["TSLA", "124"],
+            "NVIDIA (NVDA) 🟢": ["NVDA", "125"], "AMAZON (AMZN) 📦": ["AMZN", "126"]
         },
-        "BANCA": {
-            "SANTANDER (SAN.MC) 🏦": ["SAN.MC", "201"], 
-            "BBVA (BBVA.MC) 💙": ["BBVA.MC", "202"]
-        }
+        "BANCA": { "SANTANDER (SAN) 🏦": ["SAN.MC", "201"], "BBVA (BBVA) 💙": ["BBVA.MC", "202"] }
     },
     "indices": {
-        "EEUU": {
-            "US100 (Nasdaq) 🇺🇸": ["NQ=F", "100"], 
-            "US500 (S&P500) 🇺🇸": ["ES=F", "500"],
-            "US30 (Dow Jones) 🇺🇸": ["YM=F", "30"]
-        },
-        "EUROPA": {
-            "DE40 (DAX) 🇩🇪": ["^GDAXI", "40"], 
-            "SPA35 (IBEX) 🇪🇸": ["^IBEX", "35"]
-        }
+        "EEUU": { "US100 (Nasdaq) 🇺🇸": ["NQ=F", "100"], "US500 (S&P500) 🇺🇸": ["ES=F", "500"] },
+        "EUROPA": { "DE40 (DAX) 🇩🇪": ["^GDAXI", "40"], "SPA35 (IBEX) 🇪🇸": ["^IBEX", "35"] }
     },
     "material": {
-        "ENERGÍA": { 
-            "OIL.WTI 🛢️": ["CL=F", "001"], 
-            "NATGAS 🔥": ["NG=F", "002"] 
-        },
-        "METALES": { 
-            "GOLD (Oro) 🟡": ["GC=F", "003"], 
-            "SILVER (Plata) ⚪": ["SI=F", "004"] 
-        }
+        "ENERGÍA": { "OIL.WTI 🛢️": ["CL=F", "001"], "NATGAS 🔥": ["NG=F", "002"] },
+        "METALES": { "GOLD (Oro) 🟡": ["GC=F", "003"], "SILVER (Plata) ⚪": ["SI=F", "004"] }
     },
     "divisas": {
-        "MAJORS": {
-            "EURUSD 🇪🇺🇺🇸": ["EURUSD=X", "501"], 
-            "GBPUSD 🇬🇧🇺🇸": ["GBPUSD=X", "502"],
-            "USDJPY 🇺🇸🇯🇵": ["USDJPY=X", "503"]
-        }
+        "MAJORS": { "EURUSD 🇪🇺🇺🇸": ["EURUSD=X", "501"], "GBPUSD 🇬🇧🇺🇸": ["GBPUSD=X", "502"] }
     }
 }
 
 # =========================================================
-# 4. MOTOR DE DATOS (PRECISIÓN ALTA)
+# BLOQUE 4: MOTORES DE DATOS (DUAL SYSTEM)
 # =========================================================
 def get_market_data(ticker, interval='1h'):
-    """Descarga y procesa datos con indicadores técnicos"""
     try:
-        # Optimizamos el periodo según el intervalo para no saturar la RAM
-        period_map = {'1m': '1d', '5m': '1d', '15m': '2d', '1h': '5d', '1d': '1mo'}
-        selected_period = period_map.get(interval, '5d')
-        
-        data = yf.download(ticker, period=selected_period, interval=interval, progress=False)
-        
-        if data is None or data.empty:
-            return None
-        
+        data = yf.download(ticker, period='5d', interval=interval, progress=False)
+        if data is None or data.empty: return None
         df = data.copy()
-        
-        # Aplanamiento robusto de columnas (Compatible con yfinance v0.2.40+)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        # Limpieza de nombres de columnas (Quitar espacios accidentales)
-        df.columns = [str(col).strip() for col in df.columns]
-            
-        # Cálculo de Indicadores con pandas_ta
-        # Usamos fillna para evitar que nulos rompan el gráfico de Plotly
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         df['EMA_20'] = ta.ema(df['Close'], length=20)
-        df['EMA_50'] = ta.ema(df['Close'], length=50)
         df['RSI'] = ta.rsi(df['Close'], length=14)
-        
-        # Color del volumen para el gráfico (Bicolor)
         df['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' for c, o in zip(df['Close'], df['Open'])]
-        
-        # Eliminamos filas con NaNs iniciales para que el gráfico empiece con datos limpios
         return df.dropna(subset=['Close'])
-        
-    except Exception as e:
-        st.error(f"Error Crítico en Motor de Datos: {e}")
-        return None
+    except: return None
+
+def get_alpha_vantage_data(symbol):
+    try:
+        clean_s = symbol.split('=')[0].split('.')[0]
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_s}&apikey={AV_API_KEY}&datatype=csv"
+        df_av = pd.read_csv(url)
+        if df_av.empty or "timestamp" not in df_av.columns: return None
+        df_av['timestamp'] = pd.to_datetime(df_av['timestamp'])
+        df_av.set_index('timestamp', inplace=True).sort_index(ascending=True, inplace=True)
+        df_av.rename(columns={'open':'Open','high':'High','low':'Low','close':'Close','volume':'Volume'}, inplace=True)
+        df_av['EMA_20'] = ta.ema(df_av['Close'], length=20)
+        df_av['RSI'] = ta.rsi(df_av['Close'], length=14)
+        return df_av
+    except: return None
 
 # =========================================================
-# 5. COMPONENTES VISUALES (RADAR & ESTRATEGIA)
+# BLOQUE 5: COMPONENTES DE UI Y RENDERIZADO
 # =========================================================
-def render_radar(df, ticker_name):
-    """Dibuja el gráfico profesional con 3 niveles"""
-    # Usamos una clave única para el gráfico basada en el ticker para evitar errores de Nodo
-    chart_key = f"radar_chart_{st.session_state.ticker}"
-    
-    fig = make_subplots(
-        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03,
-        row_width=[0.15, 0.20, 0.65],
-        subplot_titles=("SISTEMA DE PRECIO", "FUERZA RSI", "VOLUMEN")
-    )
+def send_telegram_alert(message):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}, timeout=5)
+    except: pass
 
-    # Velas (Colores Wolf: Verde Neón / Rojo Sangre)
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name='Market', increasing_line_color='#00ff41', decreasing_line_color='#ff3131'
-    ), row=1, col=1)
-
-    # Medias Móviles (Oro)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#FFD700', width=1.5), name='EMA 20'), row=1, col=1)
-    
-    # RSI (Púrpura)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#8A2BE2', width=2), name='RSI'), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="#ff3131", opacity=0.5, row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="#00ff41", opacity=0.5, row=2, col=1)
-
-    # Volumen Bicolor
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df['Vol_Color'], name='Vol'), row=3, col=1)
-
-    fig.update_layout(
-        template="plotly_dark", height=700, 
-        margin=dict(l=10, r=10, t=30, b=10), 
-        xaxis_rangeslider_visible=False,
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-    )
-    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+def render_shielded_chart(df, ticker_actual):
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_width=[0.15, 0.20, 0.65])
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], increasing_line_color='#00ff41', decreasing_line_color='#ff3131'), row=1, col=1)
+    if 'EMA_20' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#FFD700', width=1.5)), row=1, col=1)
+    if 'RSI' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#8A2BE2', width=2)), row=2, col=1)
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df.get('Vol_Color', '#888')), row=3, col=1)
+    fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10), showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker_actual}_{len(df)}")
 
 def render_strategy_cards(df):
-    """Genera señales de trading robustas"""
     st.markdown("### 🎯 SEÑALES SENTINEL")
-    
-    # Aseguramos que existan datos antes de calcular
-    if df is None or len(df) < 2:
-        st.warning("Datos insuficientes para señales.")
-        return
-
     last_p = float(df['Close'].iloc[-1])
     ema_v = float(df['EMA_20'].iloc[-1])
-    ticker = st.session_state.ticker
+    color = "#00ff41" if last_p > ema_v else "#ff3131"
     
-    # Precisión adaptativa
-    prec = 5 if "=X" in ticker or any(x in ticker for x in ["EUR", "USD", "GBP"]) else 2
-    
-    tendencia = "ALCISTA" if last_p > ema_v else "BAJISTA"
-    color = "#00ff41" if tendencia == "ALCISTA" else "#ff3131"
-    
-    # Cálculo de ATR con fallback de seguridad
-    diff = (df['High'] - df['Low']).tail(14)
-    atr = diff.mean() if not diff.empty else last_p * 0.01
-    
-    sl = last_p - (atr * 1.5) if tendencia == "ALCISTA" else last_p + (atr * 1.5)
-    tp = last_p + (atr * 3) if tendencia == "ALCISTA" else last_p - (atr * 3)
-    
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f"""
-        <div style="background:#0d1117; padding:20px; border-left:10px solid {color}; border-radius:10px; border:1px solid #333;">
-            <h2 style="color:{color}; margin:0;">{tendencia}</h2>
-            <p style="font-size:1.2em; margin-bottom:0;">Entrada: <b>{last_p:.{prec}f}</b></p>
-            <hr style="opacity:0.1;">
-            <p style="color:#00ff41; margin:0;">🎯 Objetivo TP: {tp:.{prec}f}</p>
-            <p style="color:#ff3131; margin:0;">🛡️ Riesgo SL: {sl:.{prec}f}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        st.markdown(f'<div style="background:#0d1117; padding:20px; border-left:10px solid {color}; border-radius:10px;"><h2>{last_p:,.2f}</h2><p>TENDENCIA: {color}</p></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown("#### 🚀 BRIDGE XTB")
-        # Usamos un formulario para evitar refrescos accidentales al escribir
-        with st.form(f"xtb_bridge_{ticker}"):
-            lotes = st.number_input("Volumen", value=0.10, step=0.01, min_value=0.01)
-            # Forzamos conversión a float para evitar errores de tipo en Streamlit
-            sl_f = st.number_input("S/L Real", value=float(sl), format=f"%.{prec}f")
-            tp_f = st.number_input("T/P Real", value=float(tp), format=f"%.{prec}f")
-            
+        with st.form("bridge_form"):
+            lotes = st.number_input("Lotes", value=0.10)
             if st.form_submit_button("VIGILAR OPERACIÓN"):
-                msg = f"🐺 *SENTINEL ACTIVO*\nActivo: {st.session_state.ticker_name}\nLotes: {lotes}\nSL: {sl_f}\nTP: {tp_f}"
-                send_telegram_alert(msg)
-                st.success("Sincronizado con Central")
+                send_telegram_alert(f"🐺 *SENTINEL*: {st.session_state.ticker_name} | Lotes: {lotes}")
+                st.toast("Sincronizado")
 
 # =========================================================
-# 6. ORQUESTADOR DE NAVEGACIÓN Y VISTAS (MODO SEGURO)
+# BLOQUE 6: ORQUESTADOR DE NAVEGACIÓN (MAIN)
 # =========================================================
+# Estilos CSS
+st.markdown("""<style> .stApp { background-color: #05070a; } div.stButton > button { border-radius: 0px; border: 1px solid #333; } </style>""", unsafe_allow_html=True)
 
-# 1. Header de Capital Estabilizado
-st.markdown(f"""
-<div class="metric-container">
-    <span>CAPITAL: {st.session_state.get('wallet', 0):,.2f}€</span>
-    <span>DISPONIBLE: {st.session_state.get('margen', 0):,.2f}€</span>
-    <span>PnL DÍA: {st.session_state.get('pnl', 0):,.2f}€</span>
-</div>
-""", unsafe_allow_html=True)
+# 1. Cabecera Capital
+st.markdown(f'<div style="background:#0d1117; padding:10px; border-bottom:2px solid #A67B5B; display:flex; justify-content:space-around; color:#A67B5B; font-weight:bold;"><span>CAPITAL: {st.session_state.wallet:,.2f}€</span><span>PNL DÍA: {st.session_state.pnl:,.2f}€</span></div>', unsafe_allow_html=True)
 
-# 2. Ticker de noticias (Optimizado)
-hot_list = [("NQ=F", "US100", "▲"), ("GC=F", "ORO", "▼"), ("EURUSD=X", "EURUSD", "▲")]
-content = "".join([f'<div class="ticker-item">{n} {i} {t}</div>' for t, n, i in hot_list * 5])
-st.markdown(f'<div class="ticker-wrap"><div class="ticker-move">{content}</div></div>', unsafe_allow_html=True)
-
-# 3. Menú Principal (Blindado)
-nav_cols = st.columns(6)
-btns = ["🐺 LOBO", "💼 XTB", "📈 RATIOS", "🔮 PREDICCIONES", "📰 NOTICIAS", "⚙️ AJUSTES"]
-v_list = ["Lobo", "XTB", "Ratios", "Predicciones", "Noticias", "Ajustes"]
+# 2. Selector de Vistas
+nav_cols = st.columns(4)
+v_names = ["🐺 LOBO", "📰 NOTICIAS", "⚙️ AJUSTES", "🧹 RESET"]
+v_keys = ["Lobo", "Noticias", "Ajustes", "Reset"]
 
 for i, col in enumerate(nav_cols):
-    is_active = st.session_state.view == v_list[i]
-    tag = "nav-active" if is_active else "nav-btn"
-    with col:
-        st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
-        if st.button(btns[i], key=f"v_main_{i}", use_container_width=True):
-            st.session_state.view = v_list[i]
+    if col.button(v_names[i], key=f"nav_{i}", use_container_width=True):
+        if v_keys[i] == "Reset":
+            st.session_state.clear()
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.session_state.view = v_keys[i]
+        st.rerun()
 
-# --- LÓGICA DE VISTAS ---
-if st.session_state.active_sub:
-    activos = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
-    # Usamos rejilla de 4 para evitar desbordamiento
-    cols_act = st.columns(4)
+# 3. Lógica de la Vista Principal
+if st.session_state.view == "Lobo":
+    # Selector de Categorías
+    cats = list(DATABASE.keys())
+    c_cols = st.columns(len(cats))
     for i, cat in enumerate(cats):
-        tag = "menu-active" if st.session_state.active_cat == cat else "menu-btn"
-        with c_cat[i]:
-            st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
-            if st.button(cat.upper(), key=f"btn_cat_{cat}", use_container_width=True):
-                st.session_state.active_cat = cat
-                # Reset de seguridad para subcategoría
-                st.session_state.active_sub = list(DATABASE[cat].keys())[0]
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+        if c_cols[i].button(cat.upper(), key=f"cat_{cat}", use_container_width=True):
+            st.session_state.active_cat = cat
+            st.session_state.active_sub = list(DATABASE[cat].keys())[0]
+            st.rerun()
 
-    # Fila 2: Subcategorías (Máximo 4 por fila para estabilidad)
-    if st.session_state.active_cat in DATABASE:
-        subs = list(DATABASE[st.session_state.active_cat].keys())
-        c_sub = st.columns(min(len(subs), 4)) 
-        for i, (name, val) in enumerate(activos.items()):
-        col_idx = i % 4
-        is_active = st.session_state.ticker_name == name
-        tag = "menu-active" if is_active else "menu-btn"
-        
-        with cols_act[col_idx]:
-            st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
-            # CLAVE BLINDADA: Incluye categoría, sub y nombre para evitar duplicados
-            unique_btn_key = f"final_act_{st.session_state.active_cat}_{name}"
-            
-            if st.button(name, key=unique_btn_key, use_container_width=True):
-                st.session_state.ticker = val[0]
-                st.session_state.ticker_name = name
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+    # Selector de Subcategorías y Activos
+    subs = list(DATABASE[st.session_state.active_cat].keys())
+    s_cols = st.columns(len(subs))
+    for i, sub in enumerate(subs):
+        if s_cols[i].button(sub, key=f"sub_{sub}", use_container_width=True):
+            st.session_state.active_sub = sub
+            st.rerun()
 
-        # Fila 3: Activos Finales (Gestión de Grid segura)
-        if st.session_state.active_sub in DATABASE[st.session_state.active_cat]:
-            activos = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
-            # Creamos filas de 4 activos para evitar que la UI se rompa
-            cols_act = st.columns(4)
-            for i, (name, val) in enumerate(activos.items()):
-                col_idx = i % 4
-                tag = "menu-active" if st.session_state.ticker_name == name else "menu-btn"
-                with cols_act[col_idx]:
-                    st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
-                    if st.button(name, key=f"btn_act_{name}", use_container_width=True):
-                        st.session_state.ticker = val[0]
-                        st.session_state.ticker_name = name
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
+    activos = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
+    a_cols = st.columns(4)
+    for i, (name, val) in enumerate(activos.items()):
+        if a_cols[i % 4].button(name, key=f"act_{name}", use_container_width=True):
+            st.session_state.ticker = val[0]
+            st.session_state.ticker_name = name
+            st.rerun()
 
-   # Lógica de descarga híbrida
-df_lobo = get_market_data(st.session_state.ticker) # Fuente 1: Yahoo
-
-if df_lobo is None:
-    st.info("🔄 Fuente principal saturada. Activando respaldo Alpha Vantage...")
-    df_lobo = get_alpha_vantage_data(st.session_state.ticker) # Fuente 2: AV
+    # Carga de Datos y Gráfico
+    df = get_market_data(st.session_state.ticker, st.session_state.int_top)
+    if df is not None:
+        render_shielded_chart(df, st.session_state.ticker)
+        render_strategy_cards(df)
     else:
-        st.error("📡 Error de enlace. El mercado seleccionado no responde.")
-
-elif st.session_state.view == "Noticias":
-    # Usamos el bloque de noticias que definimos anteriormente (Bloque 10 integrado)
-    render_sentinel_news(st.session_state.ticker)
+        st.warning("🔄 Intentando respaldo Alpha Vantage...")
+        df_av = get_alpha_vantage_data(st.session_state.ticker)
+        if df_av is not None: render_shielded_chart(df_av, st.session_state.ticker)
+        else: st.error("Sin conexión a mercados.")
 
 elif st.session_state.view == "Ajustes":
-    st.title("⚙️ Panel de Control Wolf")
-    with st.container():
-        st.session_state.wallet = st.number_input("Capital (€)", value=float(st.session_state.wallet))
-        if st.button("GUARDAR"): st.success("Ok")
+    st.title("⚙️ AJUSTES")
+    st.session_state.wallet = st.number_input("Capital (€)", value=float(st.session_state.wallet))
+    if st.button("GUARDAR"): st.success("Guardado")
 
 else:
-    st.info(f"Sección {st.session_state.view} en fase de calibración.")
+    st.info(f"Sección {st.session_state.view} en desarrollo.")
 # =========================================================
 # BLOQUE 7: RADAR VISUAL (VOLUMEN BICOLOR & CONTROLES)
 # =========================================================
