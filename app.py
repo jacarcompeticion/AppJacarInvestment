@@ -1,7 +1,15 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf
+import pandas_ta as ta
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from streamlit_autorefresh import st_autorefresh
+import time
 
-# CONFIGURACIÓN TOTALMENTE INICIAL (Debe ser la línea 1 de ejecución de Streamlit)
+# =========================================================
+# 1. ARRANQUE DEL SISTEMA (DEBE SER LA LÍNEA 1)
+# =========================================================
 st.set_page_config(
     page_title="WOLF SOVEREIGN v.95", 
     layout="wide", 
@@ -9,45 +17,58 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Inicialización del estado después de configurar la página
+# Refresco automático cada 15 segundos para no perder oportunidades
+st_autorefresh(interval=15000, key="wolf_global_refresh")
+
+# =========================================================
+# 2. GESTIÓN DE ESTADO (SESSION STATE) - ROL ROBUSTO
+# =========================================================
 if 'initialized' not in st.session_state:
-    st.session_state.initialized = True
-    # Aquí puedes añadir otros valores por defecto si los necesitas
-# 2. LIMPIEZA DE DATOS DE YFINANCE (Vital para evitar el error de MultiIndex)
-def fix_yfinance_data(df):
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df
+    st.session_state.update({
+        'initialized': True,
+        'active_cat': 'indices',
+        'ticker': 'NQ=F',
+        'ticker_name': 'Nasdaq 100',
+        'wallet': 18850.0,
+        'pnl': 0.0,
+        'view': 'Lobo'
+    })
 
-# 3. GESTIÓN DE CATEGORÍAS (Siguiendo tus reglas: stocks, indices, material, divisas)
-def get_safe_category(cat):
-    mapping = {
-        "stocks": "stocks",
-        "indices": "indices",
-        "material": "material",
-        "currencies": "divisas" # Cambiado a 'divisas' como solicitaste
-    }
-    return mapping.get(cat.lower(), cat)
-import yfinance as yf
-import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import requests
-from streamlit_autorefresh import st_autorefresh
 # =========================================================
-# CONFIGURACIÓN DE CREDENCIALES Y APIS
+# 3. MOTOR DE DATOS (REEMPLAZA A ALPHA VANTAGE)
 # =========================================================
-TELEGRAM_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
-TELEGRAM_CHAT_ID = "1296326413"
+def get_cleaned_data(ticker, interval='1h'):
+    """
+    Sustituye la lógica de Alpha Vantage por YFinance (Sin límites de API).
+    Garantiza precisión en el cierre de velas.
+    """
+    try:
+        # Descarga de 5 días para tener contexto suficiente para indicadores
+        data = yf.download(ticker, period='5d', interval=interval, progress=False)
+        if data.empty:
+            return None
+        
+        df = data.copy()
+        # Saneamiento de MultiIndex (Problema común en versiones nuevas)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        # Indicadores Técnicos Robustos
+        df['EMA_20'] = ta.ema(df['Close'], length=20)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        
+        # Color de velas para la interfaz exitosa
+        df['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' for c, o in zip(df['Close'], df['Open'])]
+        return df.dropna(subset=['Close'])
+    except Exception as e:
+        st.error(f"Error en flujo de datos: {e}")
+        return None
 
-# Clave Alpha Vantage (Verificada sin espacios extra)
-AV_API_KEY = "3Y17BPSEURVNALDR"
-
-# Validación de seguridad corregida
-if not AV_API_KEY or AV_API_KEY == "TU_API_KEY_AQUI":
-    st.sidebar.error("❌ FALTA AV_API_KEY EN EL CÓDIGO")
-else:
-    st.sidebar.success("✅ SISTEMA AV VINCULADO")
+# =========================================================
+# 4. CATEGORÍAS OBLIGATORIAS (Saneamiento de nombres)
+# =========================================================
+# Asegúrate de que tus botones apunten a estas 4 claves exactas
+# stocks, indices, material, divisas
 # =========================================================
 # 1. CONFIGURACIÓN DEL CEREBRO Y ESTADO DE SESIÓN
 # =========================================================
