@@ -78,50 +78,98 @@ def send_telegram_alert(message):
     except Exception as e:
         st.sidebar.error(f"Error Telegram: {e}")
 # =========================================================
-# 2. MOTOR DE ESTILOS WOLF SOVEREIGN (UI PREMIUM)
+# 2. MOTOR DE ESTILOS "WOLF SOVEREIGN" (UI HIGH-CONTRAST)
 # =========================================================
-
-# Eliminamos la redundancia de set_page_config que causaba el bloqueo.
-# Los estilos se inyectan directamente para una carga ultra-rápida.
 
 st.markdown("""
     <style>
-    .stApp { background-color: #05070a; }
-    [data-testid="stVerticalBlock"] { gap: 0rem !important; }
-    
-    /* NAV SUPERIOR: MARRÓN -> BLANCO */
+    /* 1. Reset Global y Fondo */
+    .stApp {
+        background-color: #000000 !important;
+        color: #FFFFFF !important;
+    }
+
+    /* 2. Forzar Texto Blanco en todos los niveles */
+    .stMarkdown, .stText, p, span, label, .stCaption {
+        color: #FFFFFF !important;
+    }
+
+    /* 3. Menú de Navegación Superior */
     div.nav-btn button {
-        background-color: #A67B5B !important; color: #000 !important;
-        border: 1px solid #000 !important; border-radius: 0px !important; height: 3.5em !important;
+        background-color: #000000 !important; 
+        color: #D4AF37 !important; /* Oro Wolf */
+        border: 2px solid #D4AF37 !important; 
+        font-weight: bold !important;
+    }
+    div.nav-btn button:hover {
+        background-color: #D4AF37 !important; 
+        color: #000000 !important;
     }
     div.nav-active button {
-        background-color: #FFFFFF !important; color: #000 !important;
-        border: 2px solid #000 !important; font-weight: 900 !important; height: 3.5em !important;
+        background-color: #D4AF37 !important; 
+        color: #000000 !important;
+        border: 2px solid #D4AF37 !important; 
+        font-weight: 900 !important; 
+        box-shadow: 0px 0px 15px rgba(212, 175, 55, 0.5);
     }
 
-    /* MENÚ CASCADA: BLANCO -> NEGRO */
+    /* 4. Submenú de Categorías */
     div.menu-btn button {
-        background-color: #FFFFFF !important; color: #000 !important;
-        border: 1px solid #333 !important; border-radius: 0px !important; height: 3.2em !important;
+        background-color: #0a0e14 !important; 
+        color: #FFFFFF !important;
+        border: 1px solid #444444 !important; 
     }
     div.menu-active button {
-        background-color: #000000 !important; color: #FFFFFF !important;
-        border: 1px solid #FFFFFF !important; font-weight: bold !important; height: 3.2em !important;
+        background-color: #000000 !important; 
+        color: #00ff41 !important; /* Verde Neón */
+        border: 2px solid #00ff41 !important; 
+        box-shadow: 0px 0px 10px rgba(0, 255, 65, 0.4);
     }
 
+    /* 5. Cabecera de Capital (Métricas) */
     .metric-container {
-        background-color: #0d1117; padding: 10px; border-bottom: 2px solid #A67B5B;
-        display: flex; justify-content: space-around; color: #A67B5B; font-weight: bold;
+        background-color: #0a0e14; 
+        padding: 15px; 
+        border-bottom: 2px solid #D4AF37;
+        display: flex; 
+        justify-content: space-around; 
+        border-radius: 8px;
+        margin-bottom: 1rem;
     }
-    
-    /* TICKER ANIMATION */
-    .ticker-wrap { width: 100%; overflow: hidden; background: #000; padding: 10px 0; border-bottom: 1px solid #333; }
-    .ticker-move { display: flex; width: fit-content; animation: ticker 40s linear infinite; }
-    .ticker-item { padding: 0 40px; white-space: nowrap; font-family: 'Courier New', monospace; color: #fff; }
-    @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    .metric-container span {
+        color: #FFFFFF !important; /* Etiquetas ahora en Blanco */
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .metric-container b {
+        color: #FFFFFF !important; 
+        font-size: 1.4rem;
+    }
+
+    /* 6. Inputs y Formularios (Fondo oscuro, texto blanco) */
+    input, select, textarea, [data-baseweb="select"] {
+        background-color: #0a0e14 !important;
+        color: #FFFFFF !important;
+        border: 1px solid #444444 !important;
+    }
+
+    /* 7. Ticker de Noticias */
+    .ticker-item { 
+        color: #D4AF37 !important; 
+        font-weight: bold;
+    }
+
+    /* Estilo para las métricas nativas de Streamlit */
+    [data-testid="stMetricLabel"] p {
+        color: #FFFFFF !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #FFFFFF !important;
+    }
+
     </style>
     """, unsafe_allow_html=True)
-
 # =========================================================
 # 3. BASE DE DATOS ESTRUCTURADA (MÉTODO CASCADA)
 # =========================================================
