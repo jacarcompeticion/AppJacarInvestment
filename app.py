@@ -128,45 +128,45 @@ st.markdown("""
 # Categorías: stocks, indices, material, divisas
 DATABASE = {
     "stocks": {
-        "TECNOLOGÍA": {
-            "APPLE (AAPL.US) 🍎": ["AAPL", "123"], 
-            "TESLA (TSLA.US) ⚡": ["TSLA", "124"], 
-            "NVIDIA (NVDA.US) 🟢": ["NVDA", "125"], 
-            "AMAZON (AMZN.US) 📦": ["AMZN", "126"],
-            "META (META.US) 📱": ["META", "127"], 
-            "MICROSOFT (MSFT.US) 💻": ["MSFT", "128"]
+        "Dividendos TOP (ES)": {
+            "Enagás (ENG.MC)": ["ENG.MC", "Yield ~10%"],
+            "Logista (LOG.MC)": ["LOG.MC", "Yield ~6.5%"],
+            "Endesa (ELE.MC)": ["ELE.MC", "Yield ~7%"]
         },
-        "BANCA": {
-            "SANTANDER (SAN.MC) 🏦": ["SAN.MC", "201"], 
-            "BBVA (BBVA.MC) 💙": ["BBVA.MC", "202"]
+        "Potencial Inversión": {
+            "Inditex (ITX.MC)": ["ITX.MC", "Crecimiento Sólido"],
+            "Iberdrola (IBE.MC)": ["IBE.MC", "Líder Renovables"],
+            "Grifols (GRF.MC)": ["GRF.MC", "Recuperación Táctica"]
         }
     },
     "indices": {
-        "EEUU": {
-            "US100 (Nasdaq) 🇺🇸": ["NQ=F", "100"], 
-            "US500 (S&P500) 🇺🇸": ["ES=F", "500"],
-            "US30 (Dow Jones) 🇺🇸": ["YM=F", "30"]
-        },
-        "EUROPA": {
-            "DE40 (DAX) 🇩🇪": ["^GDAXI", "40"], 
-            "SPA35 (IBEX) 🇪🇸": ["^IBEX", "35"]
+        "Principales": {
+            "IBEX 35": ["^IBEX", "España"],
+            "S&P 500": ["^GSPC", "USA"],
+            "DAX 40": ["^GDAXI", "Alemania"],
+            "VIX (Miedo)": ["^VIX", "Cobertura"] # Sube cuando el mercado cae
         }
     },
     "material": {
-        "ENERGÍA": { 
-            "OIL.WTI 🛢️": ["CL=F", "001"], 
-            "NATGAS 🔥": ["NG=F", "002"] 
+        "Energía": {
+            "Petróleo Brent": ["BZ=F", "Energía Global"],
+            "Gas Natural": ["NG=F", "Alta Volatilidad"]
         },
-        "METALES": { 
-            "GOLD (Oro) 🟡": ["GC=F", "003"], 
-            "SILVER (Plata) ⚪": ["SI=F", "004"] 
+        "Metales Tácticos": {
+            "Oro": ["GC=F", "Refugio"],
+            "Plata": ["SI=F", "Industrial/Refugio"],
+            "Cobre": ["HG=F", "Barómetro Económico"] # El "Doctor Cobre" predice recesiones
         }
     },
     "divisas": {
-        "MAJORS": {
-            "EURUSD 🇪🇺🇺🇸": ["EURUSD=X", "501"], 
-            "GBPUSD 🇬🇧🇺🇸": ["GBPUSD=X", "502"],
-            "USDJPY 🇺🇸🇯🇵": ["USDJPY=X", "503"]
+        "Mayores": {
+            "EUR/USD": ["EURUSD=X", "Euro"],
+            "GBP/USD": ["GBPUSD=X", "Libra"],
+            "USD/JPY": ["JPY=X", "Yen"]
+        },
+        "Refugio/Carry": {
+            "USD/CHF": ["USDCHF=X", "Franco Suizo"], # Refugio máximo
+            "USD/MXN": ["USDMXN=X", "Peso Mexicano"] # Alta volatilidad/Carry Trade
         }
     }
 }
