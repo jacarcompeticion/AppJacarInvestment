@@ -1,13 +1,26 @@
-import streamlit as st
-import os
+port streamlit as st
+import pandas as pd
 
-# --- PARCHE DE COMPATIBILIDAD PARA PANDAS-TA ---
-try:
-    import pandas_ta as ta
-except ImportError:
-    os.system('pip install pandas-ta==0.3.14b0')
-    import pandas_ta as ta
+# 1. CONFIGURACIÓN ÚNICA (Si esto se repite, la app falla)
+if 'initialized' not in st.session_state:
+    st.set_page_config(page_title="WOLF SOVEREIGN", layout="wide")
+    st.session_state.initialized = True
 
+# 2. LIMPIEZA DE DATOS DE YFINANCE (Vital para evitar el error de MultiIndex)
+def fix_yfinance_data(df):
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
+
+# 3. GESTIÓN DE CATEGORÍAS (Siguiendo tus reglas: stocks, indices, material, divisas)
+def get_safe_category(cat):
+    mapping = {
+        "stocks": "stocks",
+        "indices": "indices",
+        "material": "material",
+        "currencies": "divisas" # Cambiado a 'divisas' como solicitaste
+    }
+    return mapping.get(cat.lower(), cat)
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
