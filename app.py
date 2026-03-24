@@ -1,11 +1,18 @@
-port streamlit as st
+import streamlit as st
 import pandas as pd
 
-# 1. CONFIGURACIÓN ÚNICA (Si esto se repite, la app falla)
-if 'initialized' not in st.session_state:
-    st.set_page_config(page_title="WOLF SOVEREIGN", layout="wide")
-    st.session_state.initialized = True
+# CONFIGURACIÓN TOTALMENTE INICIAL (Debe ser la línea 1 de ejecución de Streamlit)
+st.set_page_config(
+    page_title="WOLF SOVEREIGN v.95", 
+    layout="wide", 
+    page_icon="🐺",
+    initial_sidebar_state="collapsed"
+)
 
+# Inicialización del estado después de configurar la página
+if 'initialized' not in st.session_state:
+    st.session_state.initialized = True
+    # Aquí puedes añadir otros valores por defecto si los necesitas
 # 2. LIMPIEZA DE DATOS DE YFINANCE (Vital para evitar el error de MultiIndex)
 def fix_yfinance_data(df):
     if isinstance(df.columns, pd.MultiIndex):
