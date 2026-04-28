@@ -557,12 +557,6 @@ def render_window_lobo():
 # =========================================================
 # FIN DEL BLOQUE 6
 # =========================================================
-Perfecto. Entramos en la fase de control de flota. El Bloque 7 es la Ventana Operaciones, diseñada para monitorizar tu exposición al mercado en tiempo real.
-
-He implementado la lógica de PnL Dinámico que tiene en cuenta el valor nominal de los lotes y el apalancamiento (ajustado por tipo de activo). Además, la tabla es interactiva y permite el cierre manual de operaciones con ajuste de precio final, el cual enviará los datos automáticamente a la base de datos de "Resultados".
-
-Bloque 7 de App.py: Ventana Operaciones (Gestión en Tiempo Real)
-Python
 # =========================================================
 # 7. VENTANA OPERACIONES: MONITOR DE POSICIONES
 # =========================================================
