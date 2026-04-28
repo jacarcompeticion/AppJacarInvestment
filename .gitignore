@@ -1,13 +1,18 @@
-# Seguridad: No subir llaves ni tokens
+# Seguridad: No subir llaves, tokens ni sesiones privadas
 credentials.json
 token.json
+.env
 
-# Base de Datos: No subir la DB local (Streamlit creará la suya)
+# Base de Datos y Persistencia: No subir la DB local
+# (Cada instancia de la aplicación creará la suya)
 *.db
+trading_history.json
 
-# Archivos temporales de Python
+# Archivos temporales de Python y Streamlit
 __pycache__/
 *.pyc
-
-# Configuración local de Streamlit
 .streamlit/
+.DS_Store
+
+# Datos de descarga masiva
+data/
