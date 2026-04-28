@@ -426,9 +426,6 @@ def calculate_probability(df, modo):
 # =========================================================
 # FIN DEL BLOQUE 4 ACTUALIZADO
 # =========================================================
-Aquí tienes el Bloque 5 reconstruido. He ampliado el orquestador para incluir las nuevas ventanas de Opciones, Formación y Copytrader, sumando un total de 9 ventanas. También he optimizado el layout de la botonera para que quepan todas de forma equilibrada y profesional.
-
-Python
 # =========================================================
 # 5. ORQUESTADOR DE NAVEGACIÓN Y VISTAS (AMPLIADO v1.1)
 # =========================================================
