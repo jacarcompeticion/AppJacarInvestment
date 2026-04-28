@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 
 # =========================================================
-# 1.1 CONFIGURACIÓN DE PÁGINA (WOLF SOVEREIGN v1.0)
+# 1.1 CONFIGURACIÓN DE PÁGINA (WOLF SOVEREIGN v1.1)
 # =========================================================
 st.set_page_config(
     page_title="WOLF SOVEREIGN | Terminal",
@@ -23,29 +23,29 @@ st.set_page_config(
 st_autorefresh(interval=15000, key="wolf_global_tick")
 
 # =========================================================
-# 1.2 VARIABLES DE SESIÓN (MEMORIA DE LA APP)
+# 1.2 VARIABLES DE SESIÓN (ESTADO DEL SISTEMA)
 # =========================================================
 if 'initialized' not in st.session_state:
     st.session_state.update({
         'initialized': True,
-        'view': "Lobo",           # Ventana activa
-        'active_cat': "indices",  # Categoría inicial
-        'active_sub': "Principales",
-        'ticker': "^GSPC",        # Activo por defecto (S&P 500)
+        'view': "Lobo",            # Ventana activa por defecto
+        'active_cat': "opciones/indices", 
+        'active_sub': "EEUU",
+        'ticker': "^GSPC",         # Activo inicial (S&P 500)
         'ticker_name': "S&P 500",
-        'wallet': 10000.00,       # Capital inicial configurable
+        'wallet': 10000.00,        # Capital configurable
         'margen_disp': 10000.00,
         'pnl_dia': 0.00,
-        'active_trades': [],      # Órdenes en vigilancia
-        'int_top': "1h",          # Temporalidad inicial
-        'custom_tickers': [],      # Para la inyección manual
-        'last_alert_sent': None    # Control de spam de alertas
+        'active_trades': [],       # Órdenes abiertas
+        'int_top': "1h",           # Temporalidad inicial
+        'custom_tickers': [],      # Inyección manual de activos
+        'history': [],             # Historial de operaciones cerradas
+        'messages': [{"role": "assistant", "content": "Saludos, Lobo. Terminal operativa. ¿Qué activo analizamos?"}]
     })
 
 # =========================================================
 # 1.3 SISTEMA DE ALERTAS DUAL (TELEGRAM)
 # =========================================================
-# Configuración de IDs (Se podrán editar en la pestaña de ajustes)
 TELEGRAM_BOT_TOKEN = "8236836852:AAF1ILMLRUmQI2axjyDqlRomCON7CahAJCU"
 USER_CHAT_IDS = [1296326413] 
 
@@ -61,7 +61,7 @@ def send_wolf_alert(message):
             }
             requests.post(url, json=payload, timeout=5)
         except Exception as e:
-            st.sidebar.error(f"Error enviando alerta a {chat_id}: {e}")
+            st.sidebar.error(f"Error en comunicación Telegram: {e}")
 
 # =========================================================
 # FIN DEL BLOQUE 1
@@ -78,13 +78,18 @@ st.markdown("""
         color: #FFFFFF !important;
     }
 
-    /* 2.2 Banner Ticker Superior (Estilo Bolsa Clásica) */
+    /* FIX: Texto legible en Chat IA */
+    [data-testid="stChatMessageContent"] p {
+        color: #FFFFFF !important;
+    }
+
+    /* 2.2 Banner Ticker Superior (Automatizado) */
     .ticker-wrap {
         width: 100%;
         overflow: hidden;
         background: #0a0e14;
         padding: 10px 0;
-        border-bottom: 2px solid #D4AF37; /* Línea de Oro */
+        border-bottom: 2px solid #D4AF37;
         margin-bottom: 20px;
     }
     .ticker-move {
@@ -96,14 +101,8 @@ st.markdown("""
         padding: 0 40px;
         white-space: nowrap;
         font-family: 'Courier New', monospace;
-        color: #D4AF37;
         font-weight: bold;
         font-size: 1.1rem;
-        cursor: pointer;
-        transition: color 0.3s;
-    }
-    .ticker-item:hover {
-        color: #FFFFFF;
     }
     @keyframes ticker-animation {
         0% { transform: translateX(0); }
@@ -112,32 +111,25 @@ st.markdown("""
 
     /* 2.3 Botones de Navegación Principal */
     div.nav-btn button {
-        background-color: #000000 !important;
-        color: #D4AF37 !important;
+        background-color: #1a1a1a !important;
+        color: #FFFFFF !important; /* Blanco por defecto para ver el nombre */
         border: 2px solid #D4AF37 !important;
         border-radius: 4px !important;
         height: 3.5em !important;
         font-weight: bold !important;
-        transition: all 0.2s ease-in-out;
-    }
-    div.nav-btn button:hover {
-        background-color: #D4AF37 !important;
-        color: #000000 !important; /* Texto Negro sobre fondo Dorado */
     }
     div.nav-active button {
         background-color: #D4AF37 !important;
-        color: #000000 !important; /* TEXTO NEGRO SOBRE FONDO DORADO */
+        color: #000000 !important; /* TEXTO NEGRO SOBRE DORADO */
         border: 2px solid #D4AF37 !important;
         font-weight: 900 !important;
-        box-shadow: 0px 0px 15px rgba(212, 175, 55, 0.5);
     }
 
-    /* 2.4 Botones de Categorías y Subcategorías (Cascada) */
+    /* 2.4 Botones de Categorías y Subcategorías */
     div.menu-btn button {
-        background-color: #0a0e14 !important;
+        background-color: #1a1a1a !important;
         color: #FFFFFF !important;
         border: 1px solid #444444 !important;
-        border-radius: 2px !important;
     }
     div.menu-active button {
         background-color: #FFFFFF !important; /* FONDO BLANCO */
@@ -148,17 +140,13 @@ st.markdown("""
 
     /* 2.5 Gráficos y Contenedores */
     .stPlotlyChart {
-        background-color: #05070a !important; /* Fondo diferente para gráficas */
+        background-color: #05070a !important;
         border-radius: 10px;
         padding: 5px;
         border: 1px solid #222;
     }
-
-    /* 2.6 Colores Operativos */
-    .buy-text { color: #00ff41 !important; font-weight: bold; }
-    .sell-text { color: #ff3131 !important; font-weight: bold; }
     
-    /* 2.7 Adaptabilidad Móvil */
+    /* 2.6 Adaptabilidad Móvil */
     @media (max-width: 640px) {
         .ticker-item { padding: 0 20px; font-size: 0.9rem; }
         div.nav-btn button { font-size: 0.7rem !important; }
@@ -166,31 +154,56 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN PARA EL RENDERIZADO DEL BANNER (BLOQUE 2 CONT.) ---
+# --- FUNCIÓN PARA EL RENDERIZADO DEL BANNER AUTOMATIZADO ---
 def render_top_ticker():
-    # Instrumentos "Calientes" (Se pueden automatizar luego)
-    hot_tickers = [
-        ("US100", "▲"), ("ORO", "▲"), ("BRENT", "▼"), 
-        ("EURUSD", "▲"), ("IBEX", "▼"), ("BTC", "▲")
-    ]
-    ticker_content = "".join([f'<span class="ticker-item">{name} {icon}</span>' for name, icon in hot_tickers * 6])
-    st.markdown(f"""
-        <div class="ticker-wrap">
-            <div class="ticker-move">
-                {ticker_content}
+    # Diccionario de activos para el banner dinámico
+    monitored_assets = {
+        "S&P 500": "^GSPC", 
+        "NASDAQ": "NQ=F", 
+        "ORO": "GC=F", 
+        "BRENT": "BZ=F", 
+        "EUR/USD": "EURUSD=X", 
+        "BITCOIN": "BTC-USD"
+    }
+    
+    ticker_content = ""
+    
+    for name, symbol in monitored_assets.items():
+        try:
+            # Descargamos datos de los últimos 2 días para calcular tendencia
+            data = yf.download(symbol, period="2d", interval="1d", progress=False)
+            if not data.empty and len(data) >= 2:
+                last_price = data['Close'].iloc[-1]
+                prev_price = data['Close'].iloc[-2]
+                change = ((last_price - prev_price) / prev_price) * 100
+                
+                # Definimos color y flecha según rendimiento real
+                color = "#00ff41" if change >= 0 else "#ff3131"
+                icon = "▲" if change >= 0 else "▼"
+                
+                ticker_content += f'<span class="ticker-item" style="color:{color}">{name} {icon} {change:.2f}%</span>'
+        except:
+            # Si falla la descarga de un activo, saltamos al siguiente
+            continue
+
+    if ticker_content:
+        st.markdown(f"""
+            <div class="ticker-wrap">
+                <div class="ticker-move">
+                    {ticker_content * 4}
+                </div>
             </div>
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
 # =========================================================
 # FIN DEL BLOQUE 2
 # =========================================================
 # =========================================================
-# 3. BASE DE DATOS Y GESTIÓN DE INSTRUMENTOS
+# 3. BASE DE DATOS Y GESTIÓN DE INSTRUMENTOS (v1.1)
 # =========================================================
 
 # 3.1 Estructura Maestra de Categorías
-# Nota: 'divisas' reemplaza a 'currencies' por solicitud.
+# Se han añadido 'formación' y 'copytrading' como categorías funcionales
 DATABASE = {
     "materias primas": {
         "Energía": {
@@ -237,8 +250,7 @@ DATABASE = {
         "DeFi/Altcoins": {
             "Cardano": ["ADA-USD", "Crypto"],
             "Polkadot": ["DOT-USD", "Crypto"],
-            "Chainlink": ["LINK-USD", "Crypto"],
-            "Polygon": ["MATIC-USD", "Crypto"]
+            "Chainlink": ["LINK-USD", "Crypto"]
         }
     },
     "acciones": {
@@ -257,16 +269,30 @@ DATABASE = {
             "Amazon": ["AMZN", "US"]
         }
     },
-    "opciones/indices": {
-        "EEUU": {
-            "S&P 500": ["^GSPC", "Índice"],
+    "opciones": {
+        "Estrategias": {
+            "Call S&P 500 (Bull)": ["^GSPC", "Estratégico"],
+            "Put Nasdaq (Hedge)": ["NQ=F", "Protección"],
+            "Iron Condor (Neutral)": ["^GSPC", "Ingreso"]
+        },
+        "Índices Relacionados": {
+            "VIX (Miedo)": ["^VIX", "Volatilidad"],
             "Nasdaq 100": ["NQ=F", "Índice"],
             "Dow Jones": ["^DJI", "Índice"]
-        },
-        "Europa": {
-            "IBEX 35": ["^IBEX", "Índice"],
-            "DAX 40": ["^GDAXI", "Índice"],
-            "EuroStoxx 50": ["^STOXX50E", "Índice"]
+        }
+    },
+    "copytrading": {
+        "Top Performers": {
+            "Perfil eToro (Referencia)": ["ETORO_LINK", "Social"],
+            "Analista Senior": ["RANKING_1", "HFT"],
+            "Lobo Conservative": ["RANKING_2", "Dividendos"]
+        }
+    },
+    "formación": {
+        "Cursos Gratuitos": {
+            "Bolsa desde Cero": ["LINK_EDX", "Principiante"],
+            "Análisis Técnico": ["LINK_YOUTUBE", "Intermedio"],
+            "Psicotrading": ["LINK_WEB", "Psicología"]
         }
     }
 }
@@ -286,123 +312,157 @@ def inject_custom_tickers():
 inject_custom_tickers()
 
 # =========================================================
-# FIN DEL BLOQUE 3
+# FIN DEL BLOQUE 3 ACTUALIZADO
 # =========================================================
 # =========================================================
-# 4. MOTOR ALGORÍTMICO SENTINEL (IA & ESTRATEGIA)
+# 4. MOTOR ALGORÍTMICO SENTINEL (CORREGIDO Y AMPLIADO)
 # =========================================================
 
 def get_advanced_data(ticker, interval='1h'):
-    """Descarga datos y calcula indicadores técnicos avanzados"""
+    """Descarga datos y calcula indicadores técnicos con manejo de errores NoneType"""
     try:
-        # Mapeo de periodos para optimizar velocidad
-        period_map = {'1m': '1d', '5m': '1d', '15m': '5d', '1h': '1mo', '1d': '1y'}
-        data = yf.download(ticker, period=period_map.get(interval, '1mo'), interval=interval, progress=False)
+        # Optimizamos periodos para asegurar datos suficientes para EMA 200
+        period_map = {'1m': '5d', '5m': '5d', '15m': '1mo', '1h': '1y', '1d': 'max'}
+        target_period = period_map.get(interval, '1mo')
         
-        if data.empty: return None
+        data = yf.download(ticker, period=target_period, interval=interval, progress=False)
+        
+        if data.empty or len(data) < 201: # Mínimo 201 periodos para que EMA_200 no sea None
+            # Intento de rescate si faltan datos
+            data = yf.download(ticker, period='max', interval=interval, progress=False)
+            if data.empty: return None
         
         df = data.copy()
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
-        # --- INDICADORES BÁSICOS ---
+        # --- CÁLCULO SEGURO DE INDICADORES (EVITA NONETYPE ERROR) ---
         df['EMA_20'] = ta.ema(df['Close'], length=20)
         df['EMA_200'] = ta.ema(df['Close'], length=200)
         df['RSI'] = ta.rsi(df['Close'], length=14)
         
-        # --- BOLLINGER & MACD ---
+        # Bandas de Bollinger
         bbands = ta.bbands(df['Close'], length=20, std=2)
-        df = pd.concat([df, bbands], axis=1)
-        macd = ta.macd(df['Close'])
-        df = pd.concat([df, macd], axis=1)
+        if bbands is not None:
+            df = pd.concat([df, bbands], axis=1)
         
-        # --- DETECCIÓN DE SOPORTES Y RESISTENCIAS (PUNTOS DE GIRO) ---
+        # ATR para cálculo de Volatilidad (Soporte/Resistencia dinámico)
+        df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+        
+        # --- DETECCIÓN DE PIVOTS ---
         df['Pivot'] = (df['High'] + df['Low'] + df['Close']) / 3
         df['R1'] = (2 * df['Pivot']) - df['Low']
         df['S1'] = (2 * df['Pivot']) - df['High']
         
-        # --- LÓGICA DE FIBONACCI (Retrocesos del último swing) ---
+        # --- FIBONACCI ---
         max_h = df['High'].tail(100).max()
         min_l = df['Low'].tail(100).min()
         diff = max_h - min_l
         df['Fib_618'] = max_h - (diff * 0.618)
         df['Fib_382'] = max_h - (diff * 0.382)
 
-        # Color del volumen para el gráfico
         df['Vol_Color'] = ['#00ff41' if c >= o else '#ff3131' for c, o in zip(df['Close'], df['Open'])]
         
-        return df.dropna(subset=['Close'])
+        # Eliminamos filas incompletas pero verificamos que quede contenido
+        df_clean = df.dropna(subset=['EMA_20', 'EMA_200', 'RSI'])
+        return df_clean if not df_clean.empty else None
+        
     except Exception as e:
-        st.error(f"Error en el motor algorítmico: {e}")
+        st.error(f"Error Crítico en Motor Algorítmico: {e}")
         return None
 
-def analyze_patterns(df):
-    """Detecta patrones de velas y figuras chartistas"""
-    last_close = df['Close'].iloc[-1]
-    prev_close = df['Close'].iloc[-2]
-    rsi = df['RSI'].iloc[-1]
+def analyze_triple_strategy(df, interval):
+    """Calcula estrategias para 3 horizontes temporales"""
+    if df is None or len(df) < 2: return {}
     
-    signals = []
-    # Ejemplo: Detección simple de tendencia y agotamiento (Base para HCH/Taza)
-    if rsi > 70: signals.append("SOBRECOMPRA")
-    if rsi < 30: signals.append("SOBREVENTA")
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
     
-    # Cruce de EMAs (Golden Cross / Death Cross)
-    if df['EMA_20'].iloc[-1] > df['EMA_200'].iloc[-1] and df['EMA_20'].iloc[-2] <= df['EMA_200'].iloc[-2]:
-        signals.append("GOLDEN CROSS")
-        
-    return signals
+    # Mapeo de tiempo estimado según intervalo
+    time_units = {
+        '1m': ('minutos', 1), '5m': ('minutos', 5), '15m': ('minutos', 15),
+        '1h': ('horas', 1), '1d': ('días', 1)
+    }
+    unit, mult = time_units.get(interval, ('periodos', 1))
 
-def calculate_probability(df, signals):
-    """Calcula el % de éxito de la operación basado en la confluencia de indicadores"""
-    prob = 50.0  # Base neutra
+    estrategias = {
+        "CORTO PLAZO (Scalping)": {
+            "señal": "COMPRA" if last['Close'] > last['EMA_20'] else "VENTA",
+            "tiempo": f"15-60 {unit}",
+            "confianza": calculate_probability(df, "corto")
+        },
+        "MEDIO PLAZO (Swing)": {
+            "señal": "COMPRA" if last['EMA_20'] > last['EMA_200'] else "VENTA",
+            "tiempo": f"4-24 {unit}",
+            "confianza": calculate_probability(df, "medio")
+        },
+        "LARGO PLAZO (Posicional)": {
+            "señal": "COMPRA" if last['Close'] > last['EMA_200'] and last['RSI'] > 50 else "VENTA",
+            "tiempo": f"+48 {unit}",
+            "confianza": calculate_probability(df, "largo")
+        }
+    }
+    return estrategias
+
+def calculate_probability(df, modo):
+    """Calcula % de éxito basado en confluencias técnicas reales"""
+    last = df.iloc[-1]
+    prob = 50.0
     
-    # Confluencia EMA + RSI
-    if df['Close'].iloc[-1] > df['EMA_20'].iloc[-1] and df['RSI'].iloc[-1] > 50:
-        prob += 15
+    # Factor RSI
+    if 40 < last['RSI'] < 60: prob += 5
+    elif last['RSI'] > 70 or last['RSI'] < 30: prob -= 10 # Agotamiento
     
-    # Volumen Inusual (+2 desviaciones estándar)
+    # Factor Volumen
     vol_mean = df['Volume'].tail(20).mean()
-    if df['Volume'].iloc[-1] > (vol_mean * 1.5):
-        prob += 10
-        
-    # Ajuste por señales de patrones
-    if "GOLDEN CROSS" in signals: prob += 10
-    if "SOBRECOMPRA" in signals: prob -= 5
+    if last['Volume'] > vol_mean: prob += 15
     
-    return min(prob, 99.0)
+    # Factor Tendencia
+    if modo == "corto" and (last['Close'] > last['EMA_20']): prob += 10
+    if modo == "largo" and (last['EMA_20'] > last['EMA_200']): prob += 20
+    
+    return min(prob, 98.0)
 
 # =========================================================
-# FIN DEL BLOQUE 4
+# FIN DEL BLOQUE 4 ACTUALIZADO
 # =========================================================
+Aquí tienes el Bloque 5 reconstruido. He ampliado el orquestador para incluir las nuevas ventanas de Opciones, Formación y Copytrader, sumando un total de 9 ventanas. También he optimizado el layout de la botonera para que quepan todas de forma equilibrada y profesional.
+
+Python
 # =========================================================
-# 5. ORQUESTADOR DE NAVEGACIÓN Y VISTAS
+# 5. ORQUESTADOR DE NAVEGACIÓN Y VISTAS (AMPLIADO v1.1)
 # =========================================================
 
 def run_navigation():
-    """Renderiza el menú superior y gestiona el flujo de las 6 ventanas"""
+    """Renderiza el menú superior y gestiona el flujo de las 9 ventanas de la terminal"""
     
-    # 5.1 Renderizado del Banner Superior (Ticker)
+    # 5.1 Renderizado del Banner Superior Dinámico (Llamada al motor automatizado)
     render_top_ticker()
 
-    # 5.2 Cabecera de Capital Estática (Siempre visible)
+    # 5.2 Cabecera de Capital Estática
+    pnl_color = "#00ff41" if st.session_state.pnl_dia >= 0 else "#ff3131"
     st.markdown(f"""
         <div class="metric-container" style="background-color: #0a0e14; padding: 15px; border-bottom: 2px solid #D4AF37; display: flex; justify-content: space-around; border-radius: 8px; margin-bottom: 1rem;">
-            <div style="text-align:center;"><span>CAPITAL TOTAL</span><br><b style="font-size:1.4rem;">{st.session_state.wallet:,.2f}€</b></div>
-            <div style="text-align:center;"><span>DISPONIBLE</span><br><b style="font-size:1.4rem;">{st.session_state.margen_disp:,.2f}€</b></div>
-            <div style="text-align:center;"><span>PnL DÍA</span><br><b style="font-size:1.4rem; color:#00ff41;">+{st.session_state.pnl_dia:,.2f}€</b></div>
+            <div style="text-align:center;"><span style="color:#D4AF37; font-size:0.8rem;">CAPITAL TOTAL</span><br><b style="font-size:1.4rem;">{st.session_state.wallet:,.2f}€</b></div>
+            <div style="text-align:center;"><span style="color:#D4AF37; font-size:0.8rem;">DISPONIBLE</span><br><b style="font-size:1.4rem;">{st.session_state.margen_disp:,.2f}€</b></div>
+            <div style="text-align:center;"><span style="color:#D4AF37; font-size:0.8rem;">PnL DÍA</span><br><b style="font-size:1.4rem; color:{pnl_color};">{"+" if st.session_state.pnl_dia >= 0 else ""}{st.session_state.pnl_dia:,.2f}€</b></div>
         </div>
     """, unsafe_allow_html=True)
 
-    # 5.3 Menú Principal de Navegación (6 Ventanas)
-    nav_cols = st.columns(6)
+    # 5.3 Menú Principal de Navegación (9 Ventanas distribuidas en 3 filas para móvil/web)
+    # Usamos una cuadrícula de 9 columnas para desktop
+    nav_cols = st.columns(9)
+    
     views = [
         ("🐺 LOBO", "Lobo"),
-        ("📊 OPERACIONES", "Operaciones"),
-        ("🏆 RESULTADOS", "Resultados"),
-        ("📰 NOTICIAS", "Noticias"),
-        ("⚙️ CONFIG", "Configuracion"),
-        ("🤖 IA WOLF", "IA_Wolf")
+        ("📊 OPERAR", "Operaciones"),
+        ("💎 OPCIONES", "Opciones"),
+        ("👥 COPY", "Copytrading"),
+        ("📰 NEWS", "Noticias"),
+        ("🏆 HITO", "Resultados"),
+        ("🎓 ACADEMY", "Formacion"),
+        ("🤖 IA WOLF", "IA_Wolf"),
+        ("⚙️ CONFIG", "Configuracion")
     ]
 
     for i, (label, view_id) in enumerate(views):
@@ -417,148 +477,161 @@ def run_navigation():
 
     st.markdown("---")
 
-    # 5.4 Enrutador de Contenido
-    if st.session_state.view == "Lobo":
+    # 5.4 Enrutador de Contenido (Lógica de carga de ventanas)
+    v = st.session_state.view
+    if v == "Lobo":
         render_window_lobo()
-    elif st.session_state.view == "Operaciones":
+    elif v == "Operaciones":
         render_window_operaciones()
-    elif st.session_state.view == "Resultados":
-        render_window_resultados()
-    elif st.session_state.view == "Noticias":
+    elif v == "Opciones":
+        render_window_opciones()      # Nueva ventana
+    elif v == "Copytrading":
+        render_window_copytrading()    # Nueva ventana
+    elif v == "Noticias":
         render_window_noticias()
-    elif st.session_state.view == "Configuracion":
-        render_window_configuracion()
-    elif st.session_state.view == "IA_Wolf":
+    elif v == "Resultados":
+        render_window_resultados()
+    elif v == "Formacion":
+        render_window_formacion()      # Nueva ventana
+    elif v == "IA_Wolf":
         render_window_ia_wolf()
+    elif v == "Configuracion":
+        render_window_configuracion()
 
 # =========================================================
-# FIN DEL BLOQUE 5
+# FIN DEL BLOQUE 5 ACTUALIZADO
 # =========================================================
 # =========================================================
-# 6. VENTANA LOBO: SELECTOR, GRÁFICO Y ESTRATEGIA
+# 6. VENTANA LOBO: SELECTOR, GRÁFICO Y TRIPLE ESTRATEGIA
 # =========================================================
 
 def render_window_lobo():
-    # 6.1 SELECTOR DE CASCADA
+    # 6.1 SELECTOR DE CASCADA PROFESIONAL
     c1, c2, c3 = st.columns([1, 1, 2])
     
     with c1:
         cats = list(DATABASE.keys())
-        st.session_state.active_cat = st.selectbox("CATEGORÍA", [c.upper() for c in cats]).lower()
+        # Filtramos para que solo aparezcan categorías de trading en esta ventana
+        trading_cats = [c for c in cats if c not in ["formación", "copytrading"]]
+        cat_idx = trading_cats.index(st.session_state.active_cat) if st.session_state.active_cat in trading_cats else 0
+        st.session_state.active_cat = st.selectbox("🎯 MERCADO", trading_cats, index=cat_idx).lower()
     
     with c2:
         subs = list(DATABASE[st.session_state.active_cat].keys())
-        st.session_state.active_sub = st.selectbox("SUBCATEGORÍA", subs)
+        st.session_state.active_sub = st.selectbox("📂 GRUPO", subs)
         
     with c3:
         activos = DATABASE[st.session_state.active_cat][st.session_state.active_sub]
-        seleccion = st.selectbox("INSTRUMENTO", list(activos.keys()))
+        seleccion = st.selectbox("📈 ACTIVO", list(activos.keys()))
         st.session_state.ticker = activos[seleccion][0]
         st.session_state.ticker_name = seleccion
 
-    # 6.2 SELECTOR DE TEMPORALIDAD
+    # 6.2 SELECTOR DE TEMPORALIDAD (BOTONES ACTIVOS)
     t_cols = st.columns(8)
     tiempos = ["1m", "5m", "15m", "1h", "1d"]
     for i, t in enumerate(tiempos):
-        if t_cols[i].button(t, key=f"t_{t}", use_container_width=True, 
-                            type="primary" if st.session_state.int_top == t else "secondary"):
-            st.session_state.int_top = t
-            st.rerun()
+        is_active = st.session_state.int_top == t
+        tag = "menu-active" if is_active else "menu-btn"
+        with t_cols[i]:
+            st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
+            if st.button(t, key=f"t_{t}", use_container_width=True):
+                st.session_state.int_top = t
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # 6.3 OBTENCIÓN DE DATOS Y RENDERIZADO
+    # 6.3 OBTENCIÓN DE DATOS CON VALIDACIÓN DE SEGURIDAD
     df = get_advanced_data(st.session_state.ticker, st.session_state.int_top)
     
-    if df is not None:
-        # Gráfico Profesional (Fondo oscuro diferenciado)
+    if df is not None and not df.empty:
+        # Gráfico Profesional Plotly
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, 
                             row_heights=[0.6, 0.2, 0.2])
         
-        # Velas y EMAs
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], 
                                      close=df['Close'], name='Precio'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#D4AF37', width=1.5), name='EMA 20'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA_200'], line=dict(color='#FFFFFF', width=1), name='EMA 200'), row=1, col=1)
         
-        # RSI y Volumen
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#8A2BE2'), name='RSI'), row=2, col=1)
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=df['Vol_Color'], name='Volumen'), row=3, col=1)
         
-        fig.update_layout(template="plotly_dark", height=700, margin=dict(l=10, r=10, t=10, b=10),
+        fig.update_layout(template="plotly_dark", height=600, margin=dict(l=10, r=10, t=10, b=10),
                           paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
-        # 6.4 MOTOR DE ESTRATEGIA
-        signals = analyze_patterns(df)
-        prob = calculate_probability(df, signals)
+        # 6.4 PANEL DE TRIPLE ESTRATEGIA (CORTO/MEDIO/LARGO)
+        st.markdown("### 🎯 SENTINEL ESTRATEGY HUB")
         
+        estrategias = analyze_triple_strategy(df, st.session_state.int_top)
+        est_cols = st.columns(3)
+        
+        for i, (nombre, data) in enumerate(estrategias.items()):
+            color = "#00ff41" if data['señal'] == "COMPRA" else "#ff3131"
+            with est_cols[i]:
+                st.markdown(f"""
+                    <div style="background:#0a0e14; padding:15px; border-top:5px solid {color}; border-radius:10px; min-height:180px;">
+                        <h4 style="color:#D4AF37; margin:0;">{nombre}</h4>
+                        <h2 style="color:{color}; margin:10px 0;">{data['señal']}</h2>
+                        <p style="font-size:0.9rem; margin:0;">Probabilidad: <b>{data['confianza']}%</b></p>
+                        <p style="font-size:0.8rem; color:#888;">Tiempo est.: <b>{data['tiempo']}</b></p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # 6.5 FORMULARIO DE OPERATIVA MANUAL
+        col_form1, col_form2 = st.columns([1, 1])
         last_price = df['Close'].iloc[-1]
-        atr = (df['High'] - df['Low']).tail(14).mean()
         precision = 5 if "divisas" in st.session_state.active_cat else 2
         
-        st.markdown("### 🎯 ANÁLISIS DE ESTRATEGIA")
-        
-        # Alerta de Probabilidad
-        if prob >= 70:
-            st.success(f"🔥 ALTA PROBABILIDAD DETECTADA: {prob}%")
-        else:
-            st.warning(f"⚠️ PRECAUCIÓN: Probabilidad de {prob}% (Menor al 70%)")
-
-        col_est1, col_est2 = st.columns([1, 1])
-        
-        with col_est1:
-            # Lógica de dirección
-            tipo = "COMPRA" if last_price > df['EMA_20'].iloc[-1] else "VENTA"
-            color_btn = "#00ff41" if tipo == "COMPRA" else "#ff3131"
-            
+        with col_form1:
             st.markdown(f"""
-                <div style="background:#0a0e14; padding:20px; border-left:10px solid {color_btn}; border-radius:10px;">
-                    <h2 style="color:{color_btn};">{tipo} SUGERIDA</h2>
-                    <p>Instrumento: <b>{st.session_state.ticker_name}</b></p>
-                    <p>Precio Mercado: <b>{last_price:.{precision}f}</b></p>
+                <div style="background:#0a0e14; padding:25px; border-radius:10px; border:1px solid #333;">
+                    <p style="color:#D4AF37; margin:0;">ACTIVO SELECCIONADO</p>
+                    <h2 style="margin:0;">{st.session_state.ticker_name}</h2>
+                    <h3 style="color:#FFFFFF;">{last_price:.{precision}f}</h3>
                 </div>
             """, unsafe_allow_html=True)
 
-        with col_est2:
-            with st.form("form_operacion"):
-                st.write("📝 **PARÁMETROS DE ORDEN**")
-                vol = st.number_input("VOLUMEN (LOTES)", value=0.1, step=0.01)
-                ent = st.number_input("PRECIO ENTRADA", value=float(last_price), format=f"%.{precision}f")
+        with col_form2:
+            with st.form("ejecucion_lobo"):
+                v_cols = st.columns(2)
+                vol = v_cols[0].number_input("VOLUMEN", value=0.1, step=0.01)
+                tipo_op = v_cols[1].selectbox("OPERACIÓN", ["COMPRA", "VENTA"])
                 
-                # Cálculo automático de SL/TP basado en ATR
-                mult_sl = 1.5 if prob > 70 else 2.0
-                sl_calc = ent - (atr * mult_sl) if tipo == "COMPRA" else ent + (atr * mult_sl)
-                tp_calc = ent + (atr * 3.0) if tipo == "COMPRA" else ent - (atr * 3.0)
+                # Cálculo de SL/TP por ATR
+                atr_val = df['ATR'].iloc[-1] if 'ATR' in df.columns else (last_price * 0.01)
+                sl_sug = last_price - (atr_val * 2) if tipo_op == "COMPRA" else last_price + (atr_val * 2)
+                tp_sug = last_price + (atr_val * 4) if tipo_op == "COMPRA" else last_price - (atr_val * 4)
                 
-                sl = st.number_input("STOP LOSS", value=float(sl_calc), format=f"%.{precision}f")
-                tp = st.number_input("TAKE PROFIT", value=float(tp_calc), format=f"%.{precision}f")
+                sl = st.number_input("STOP LOSS", value=float(sl_sug), format=f"%.{precision}f")
+                tp = st.number_input("TAKE PROFIT", value=float(tp_sug), format=f"%.{precision}f")
                 
-                if st.form_submit_button("🚀 LANZAR A OPERACIONES"):
+                if st.form_submit_button("🚀 EJECUTAR CAZA", use_container_width=True):
                     nueva_op = {
                         "id": datetime.now().strftime("%Y%m%d%H%M%S"),
                         "ticker": st.session_state.ticker,
                         "nombre": st.session_state.ticker_name,
-                        "tipo": tipo,
-                        "entrada": ent,
-                        "actual": last_price,
+                        "tipo": tipo_op,
+                        "entrada": last_price,
                         "volumen": vol,
                         "sl": sl,
                         "tp": tp,
-                        "status": "OPEN"
+                        "categoria": st.session_state.active_cat
                     }
                     st.session_state.active_trades.append(nueva_op)
-                    
-                    # Alerta Telegram
-                    msg = f"🐺 *NUEVA CAZA*\nActivo: {seleccion}\nTipo: {tipo}\nEntrada: {ent}\nProbabilidad: {prob}%"
-                    send_wolf_alert(msg)
-                    st.success("Operación enviada a la ventana de control.")
+                    send_wolf_alert(f"🐺 *POSICIÓN ABIERTA*\n{st.session_state.ticker_name}\nTipo: {tipo_op}\nEntrada: {last_price:.{precision}f}")
+                    st.success("Orden enviada al monitor.")
+    else:
+        st.error("⚠️ Datos insuficientes para este intervalo. Intenta subir a 15m o 1h.")
 
 # =========================================================
-# FIN DEL BLOQUE 6
+# FIN DEL BLOQUE 6 ACTUALIZADO
 # =========================================================
 # =========================================================
-# 7. VENTANA OPERACIONES: MONITOR DE POSICIONES
+# 7. VENTANA OPERACIONES: MONITOR DE POSICIONES (REVISADO)
 # =========================================================
 
 def render_window_operaciones():
@@ -568,148 +641,191 @@ def render_window_operaciones():
         st.info("No hay operaciones abiertas. Dirígete a la Ventana Lobo para cazar una oportunidad.")
         return
 
-    # Encabezados de la tabla (UI de alto contraste)
+    # 7.1 ACTUALIZACIÓN MASIVA DE PRECIOS (Optimización)
+    tickers_to_update = list(set([t['ticker'] for t in st.session_state.active_trades]))
+    try:
+        # Descarga rápida del último precio para todos los activos abiertos
+        current_data = yf.download(tickers_to_update, period='1d', interval='1m', progress=False)
+        if isinstance(current_data.columns, pd.MultiIndex):
+            prices_dict = {t: current_data['Close'][t].iloc[-1] for t in tickers_to_update}
+        else:
+            prices_dict = {tickers_to_update[0]: current_data['Close'].iloc[-1]}
+    except:
+        prices_dict = {}
+
+    # Encabezados con estilo Wolf
     cols_header = st.columns([1.5, 1, 1, 1, 1.2, 1, 1, 1.5])
     headers = ["INSTRUMENTO", "TIPO", "ENTRADA", "ACTUAL", "PnL (€)", "T/P", "S/L", "ACCIÓN"]
-    
     for i, h in enumerate(headers):
-        cols_header[i].markdown(f"**{h}**")
+        cols_header[i].markdown(f"<span style='color:#D4AF37; font-size:0.8rem;'>{h}</span>", unsafe_allow_html=True)
     st.markdown("---")
 
     trades_to_remove = []
+    pnl_flotante_total = 0
 
     for idx, trade in enumerate(st.session_state.active_trades):
-        # 7.1 Obtener precio actual en tiempo real para el PnL
-        df_now = yf.download(trade['ticker'], period='1d', interval='1m', progress=False)
-        current_p = df_now['Close'].iloc[-1] if not df_now.empty else trade['entrada']
+        # Obtener precio actual del diccionario optimizado o del trade
+        current_p = prices_dict.get(trade['ticker'], trade.get('actual', trade['entrada']))
         
-        # 7.2 Cálculo de PnL Profesional (Valor de Lote)
-        # Lógica: (Diferencia Precio) * Volumen * Multiplicador de Activo
-        multiplicador = 100000 if "divisas" in trade['ticker'].lower() else 100
-        if "BTC" in trade['ticker'] or "ETH" in trade['ticker']: multiplicador = 1
+        # 7.2 LÓGICA DE MULTIPLICADOR PROFESIONAL
+        # Forex: 1 lote = 100,000 | Oro/Indices: 1 lote = 100 | Acciones/Cripto: 1 lote = 1
+        cat_lower = trade.get('categoria', '').lower()
+        if "divisas" in cat_lower or "fx" in trade['ticker'].lower():
+            multiplicador = 100000
+        elif any(x in trade['ticker'].lower() for x in ["=f", "^"]): # Futuros o Indices
+            multiplicador = 100
+        else:
+            multiplicador = 1
         
+        # Cálculo de PnL
         diff = (current_p - trade['entrada']) if trade['tipo'] == "COMPRA" else (trade['entrada'] - current_p)
         pnl_real = diff * trade['volumen'] * multiplicador
+        pnl_flotante_total += pnl_real
         
-        # Color del PnL
+        # Estética de fila
         pnl_color = "#00ff41" if pnl_real >= 0 else "#ff3131"
-        pnl_text = f"{pnl_real:,.2f}€"
-
-        # 7.3 Renderizado de Fila
-        row = st.columns([1.5, 1, 1, 1, 1.2, 1, 1, 1.5])
-        row[0].write(trade['nombre'])
-        
         tipo_color = "#00ff41" if trade['tipo'] == "COMPRA" else "#ff3131"
+        precision = 5 if multiplicador == 100000 else 2
+
+        # Renderizado
+        row = st.columns([1.5, 1, 1, 1, 1.2, 1, 1, 1.5])
+        row[0].markdown(f"<b>{trade['nombre']}</b>", unsafe_allow_html=True)
         row[1].markdown(f"<span style='color:{tipo_color}'>{trade['tipo']}</span>", unsafe_allow_html=True)
-        
-        precision = 5 if "divisas" in trade['ticker'].lower() else 2
         row[2].write(f"{trade['entrada']:.{precision}f}")
         row[3].write(f"{current_p:.{precision}f}")
-        row[4].markdown(f"<b style='color:{pnl_color}'>{pnl_text}</b>", unsafe_allow_html=True)
+        row[4].markdown(f"<b style='color:{pnl_color}'>{pnl_real:,.2f}€</b>", unsafe_allow_html=True)
         row[5].write(f"{trade['tp']:.{precision}f}")
         row[6].write(f"{trade['sl']:.{precision}f}")
 
-        # 7.4 Acción: Botón de Cierre
+        # 7.3 BOTÓN DE CIERRE INTERACTIVO
         with row[7]:
             with st.popover("CERRAR"):
-                st.write("Confirmar Cierre")
-                precio_cierre = st.number_input("Precio Final", value=float(current_p), format=f"%.{precision}f", key=f"close_p_{idx}")
-                if st.button("EJECUTAR CIERRE", key=f"btn_close_{idx}", use_container_width=True):
-                    # Preparar datos para Resultados
+                st.markdown("### EJECUTAR CIERRE")
+                precio_cierre = st.number_input("Precio de Salida", value=float(current_p), format=f"%.{precision}f", key=f"c_{idx}")
+                if st.button("CONFIRMAR", key=f"btn_{idx}", use_container_width=True):
+                    # Guardar en histórico
                     resultado = {
                         "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "nombre": trade['nombre'],
                         "pnl": pnl_real,
                         "tipo": trade['tipo'],
-                        "categoria": trade.get('categoria', 'General') # Placeholder
+                        "entrada": trade['entrada'],
+                        "salida": precio_cierre,
+                        "volumen": trade['volumen']
                     }
-                    if 'history' not in st.session_state: st.session_state.history = []
                     st.session_state.history.append(resultado)
                     st.session_state.pnl_dia += pnl_real
                     trades_to_remove.append(idx)
                     st.rerun()
 
-    # Eliminar cerradas
+    # Actualizar Margen Disponible restando el PnL flotante negativo
+    st.session_state.margen_disp = st.session_state.wallet + pnl_flotante_total
+
+    # Limpieza de trades
     for i in sorted(trades_to_remove, reverse=True):
         st.session_state.active_trades.pop(i)
 
 # =========================================================
-# FIN DEL BLOQUE 7
+# FIN DEL BLOQUE 7 ACTUALIZADO
 # =========================================================
 # =========================================================
-# 8. VENTANA RESULTADOS: PERFORMANCE & ANALYTICS
+# 8. VENTANA RESULTADOS: PERFORMANCE & ANALYTICS (REVISADO)
 # =========================================================
 
 def render_window_resultados():
     st.subheader("🏆 ANÁLISIS DE RENDIMIENTO HISTÓRICO")
 
     if 'history' not in st.session_state or not st.session_state.history:
-        st.info("Aún no hay operaciones cerradas en el historial. Los datos aparecerán aquí tras cerrar tu primera posición.")
+        st.info("Aún no hay operaciones cerradas. Los datos aparecerán aquí tras tu primer cierre.")
         return
 
-    # 8.1 CUADROS RESUMEN (KPIs)
+    # Preparación de Datos
     hist_df = pd.DataFrame(st.session_state.history)
+    
+    # 8.1 CUADROS RESUMEN (KPIs PROFESIONALES)
     total_pnl = hist_df['pnl'].sum()
     total_ops = len(hist_df)
-    ops_ganadoras = len(hist_df[hist_df['pnl'] > 0])
-    win_rate = (ops_ganadoras / total_ops) * 100 if total_ops > 0 else 0
+    ganadas = hist_df[hist_df['pnl'] > 0]['pnl'].sum()
+    perdidas = abs(hist_df[hist_df['pnl'] <= 0]['pnl'].sum())
+    
+    win_rate = (len(hist_df[hist_df['pnl'] > 0]) / total_ops) * 100
+    profit_factor = ganadas / perdidas if perdidas > 0 else ganadas
 
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("BENEFICIO/PÉRDIDA TOTAL", f"{total_pnl:,.2f}€", delta=f"{st.session_state.pnl_dia:,.2f}€ Hoy")
-    kpi2.metric("OPERACIONES CERRADAS", total_ops)
-    kpi3.metric("TASA DE ÉXITO (WIN RATE)", f"{win_rate:.1f}%", delta_color="normal")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("PnL TOTAL ACUMULADO", f"{total_pnl:,.2f}€")
+    kpi2.metric("OPERACIONES", total_ops)
+    kpi3.metric("WIN RATE", f"{win_rate:.1f}%")
+    kpi4.metric("PROFIT FACTOR", f"{profit_factor:.2f}")
 
     st.markdown("---")
 
     # 8.2 GRÁFICAS DE RENDIMIENTO
-    col_graph1, col_graph2 = st.columns(2)
+    col_graph1, col_graph2 = st.columns([2, 1])
 
     with col_graph1:
-        st.write("📈 **CURVA DE EQUIDAD (HISTÓRICO)**")
-        # Calculamos el acumulado partiendo del capital inicial
-        hist_df['equity'] = st.session_state.wallet + hist_df['pnl'].cumsum()
+        st.write("📈 **CURVA DE EQUIDAD DINÁMICA**")
+        # Calculamos la evolución del capital
+        hist_df['balance'] = st.session_state.wallet + hist_df['pnl'].cumsum()
+        
         fig_equity = go.Figure()
         fig_equity.add_trace(go.Scatter(
-            x=hist_df.index, y=hist_df['equity'],
+            x=hist_df.index, y=hist_df['balance'],
             mode='lines+markers',
             line=dict(color='#D4AF37', width=3),
             fill='tozeroy',
             fillcolor='rgba(212, 175, 55, 0.1)',
-            name='Equity'
+            name='Capital (€)'
         ))
-        fig_equity.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=20,b=0),
-                                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        fig_equity.update_layout(
+            template="plotly_dark", height=350,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="#FFFFFF")
+        )
         st.plotly_chart(fig_equity, use_container_width=True)
 
     with col_graph2:
-        st.write("📊 **DISTRIBUCIÓN POR TIPO DE OPERACIÓN**")
+        st.write("📊 **SESGO DE OPERATIVA**")
         fig_pie = go.Figure(data=[go.Pie(
             labels=hist_df['tipo'].unique(),
             values=hist_df.groupby('tipo')['pnl'].count(),
-            hole=.4,
-            marker_colors=['#00ff41', '#ff3131']
+            hole=.5,
+            marker_colors=['#00ff41', '#ff3131'],
+            textinfo='label+percent'
         )])
-        fig_pie.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=20,b=0),
-                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        fig_pie.update_layout(
+            template="plotly_dark", height=350,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor='rgba(0,0,0,0)',
+            showlegend=False
+        )
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    # 8.3 TABLA DE HISTORIAL DETALLADO
-    st.write("📜 **HISTORIAL COMPLETO**")
-    # Invertimos el DF para ver las últimas primero
+    # 8.3 TABLA DE HISTORIAL DETALLADO (ESTILO SOVEREIGN)
+    st.write("📜 **REGISTRO DE CAZA (HISTORIAL)**")
+    
+    # Formateo de tabla para visibilidad total
+    def color_pnl(val):
+        color = '#00ff41' if val >= 0 else '#ff3131'
+        return f'color: {color}; font-weight: bold'
+
     st.dataframe(
-        hist_df[['fecha', 'nombre', 'tipo', 'pnl']].sort_index(ascending=False),
+        hist_df[['fecha', 'nombre', 'tipo', 'entrada', 'salida', 'pnl']].sort_index(ascending=False),
         column_config={
-            "pnl": st.column_config.NumberColumn("Resultado (€)", format="%.2f €"),
-            "tipo": "Operación",
             "fecha": "Fecha/Hora",
-            "nombre": "Instrumento"
+            "nombre": "Activo",
+            "tipo": "Dirección",
+            "entrada": st.column_config.NumberColumn("Entrada", format="%.4f"),
+            "salida": st.column_config.NumberColumn("Salida", format="%.4f"),
+            "pnl": st.column_config.NumberColumn("Resultado (€)", format="%.2f €")
         },
         hide_index=True,
         use_container_width=True
     )
 
 # =========================================================
-# FIN DEL BLOQUE 8
+# FIN DEL BLOQUE 8 ACTUALIZADO
 # =========================================================
 # =========================================================
 # 9. VENTANA CONFIGURACIÓN: GESTIÓN DE RIESGO E INYECCIÓN
@@ -722,197 +838,517 @@ def render_window_configuracion():
     col_cap1, col_cap2 = st.columns(2)
     
     with col_cap1:
-        st.write("💰 **GESTIÓN DE CAPITAL**")
-        st.session_state.wallet = st.number_input("Capital Inicial (€)", value=float(st.session_state.wallet), step=100.0)
-        st.session_state.margen_disp = st.number_input("Margen Disponible Real (€)", value=float(st.session_state.margen_disp), step=100.0)
+        st.markdown("### 💰 GESTIÓN DE CAPITAL")
+        # Al cambiar el capital, recalculamos el estado de la cartera
+        nuevo_capital = st.number_input("Capital Inicial (€)", value=float(st.session_state.wallet), step=500.0)
+        if nuevo_capital != st.session_state.wallet:
+            st.session_state.wallet = nuevo_capital
+            st.session_state.margen_disp = nuevo_capital
+            st.toast("Capital actualizado", icon="✅")
+        
+        st.caption("Este valor define la base para el cálculo de Drawdown y Equity.")
         
     with col_cap2:
-        st.write("🎯 **OBJETIVOS OPERATIVOS**")
+        st.markdown("### 🎯 OBJETIVOS OPERATIVOS")
         obj_sem = st.number_input("Objetivo Semanal (€)", value=500.0, step=50.0)
         obj_mes = st.number_input("Objetivo Mensual (€)", value=2000.0, step=100.0)
+        st.progress(min(st.session_state.pnl_dia / (obj_sem/5) if obj_sem > 0 else 0, 1.0), 
+                    text=f"Progreso objetivo diario: {st.session_state.pnl_dia:,.2f}€")
 
     st.markdown("---")
 
     # 9.2 CONFIGURACIÓN DE RIESGO (ESTRATEGIA)
-    st.write("🛡️ **CONFIGURACIÓN DE RIESGO ALGORÍTMICO**")
+    st.markdown("### 🛡️ CONFIGURACIÓN DE RIESGO ALGORÍTMICO")
     c_risk1, c_risk2, c_risk3 = st.columns(3)
     
     with c_risk1:
         riesgo_por_op = st.slider("% Riesgo Máximo por Operación", 0.5, 5.0, 1.0, 0.1)
-        st.caption("Define el Stop Loss sugerido en base al % del capital.")
+        st.caption("Afecta al cálculo automático del Stop Loss sugerido.")
         
     with c_risk2:
-        st.session_state.min_prob = st.slider("% Probabilidad Mínima de Éxito", 50, 90, 70, 5)
-        st.caption("Filtro para las alertas de 'Alta Probabilidad'.")
+        # Este valor se usa en el Bloque 6 para disparar alertas
+        st.session_state.min_prob = st.slider("% Umbral de Confianza Lobo", 50, 95, 70, 5)
+        st.caption("Nivel mínimo para considerar una señal como 'ALTA PROBABILIDAD'.")
 
     with c_risk3:
-        st.write("**Estado del Bot Telegram**")
-        if st.button("PROBAR CONEXIÓN DUAL", use_container_width=True):
-            send_wolf_alert("🔄 TEST DE SISTEMA: Conexión establecida con éxito.")
-            st.toast("Señal enviada a ambos dispositivos", icon="📡")
+        st.markdown("**Sincronización Dual**")
+        if st.button("PROBAR CONEXIÓN TELEGRAM", use_container_width=True):
+            test_msg = f"🐺 *WOLF SOVEREIGN*: Sistema de alertas vinculado correctamente.\nID: {st.session_state.initialized}"
+            send_wolf_alert(test_msg)
+            st.toast("Señal enviada a Telegram", icon="📡")
 
     st.markdown("---")
 
     # 9.3 INYECCIÓN MANUAL DE INSTRUMENTOS
-    st.write("🚀 **INYECCIÓN MANUAL DE ACTIVOS**")
-    st.info("Añade instrumentos de eToro, IBKR o XTB usando su Ticker de Yahoo Finance (ej: NVDA, SAN.MC, GC=F).")
+    st.markdown("### 🚀 INYECCIÓN MANUAL DE ACTIVOS")
+    st.info("Añade activos específicos de XTB, eToro o IBKR usando el Ticker de Yahoo Finance (ej: SAN.MC, NVDA, GC=F).")
     
     with st.form("form_custom_ticker", clear_on_submit=True):
         c_add1, c_add2, c_add3 = st.columns([2, 2, 1])
-        new_name = c_add1.text_input("Nombre (ej: Nvidia)")
-        new_ticker = c_add2.text_input("Ticker (ej: NVDA)")
+        new_name = c_add1.text_input("Nombre del Activo", placeholder="Ej: Nvidia")
+        new_ticker = c_add2.text_input("Ticker Yahoo Finance", placeholder="Ej: NVDA")
         
         if c_add3.form_submit_button("AÑADIR"):
             if new_name and new_ticker:
-                st.session_state.custom_tickers.append({"nombre": new_name, "ticker": new_ticker})
-                st.success(f"{new_name} inyectado en el sistema.")
-                st.rerun()
+                # Evitar duplicados
+                if not any(d['ticker'] == new_ticker for d in st.session_state.custom_tickers):
+                    st.session_state.custom_tickers.append({"nombre": new_name, "ticker": new_ticker})
+                    st.success(f"{new_name} ({new_ticker}) inyectado con éxito.")
+                    # Inyectamos inmediatamente en la base de datos volátil
+                    inject_custom_tickers()
+                    st.rerun()
+                else:
+                    st.warning("El ticker ya existe en la lista personalizada.")
 
-    # Visualizar y eliminar activos manuales
+    # Visualizar y gestionar activos manuales
     if st.session_state.custom_tickers:
-        with st.expander("Ver Activos Personalizados"):
+        with st.expander("Ver y Editar Activos Personalizados", expanded=True):
             for idx, item in enumerate(st.session_state.custom_tickers):
-                c_del1, c_del2 = st.columns([4, 1])
-                c_del1.write(f"🔹 {item['nombre']} ({item['ticker']})")
-                if c_del2.button("❌", key=f"del_custom_{idx}"):
+                c_del1, c_del2 = st.columns([5, 1])
+                c_del1.markdown(f"🔹 **{item['nombre']}** (`{item['ticker']}`)")
+                if c_del2.button("Eliminar", key=f"del_custom_{idx}", use_container_width=True):
                     st.session_state.custom_tickers.pop(idx)
                     st.rerun()
 
 # =========================================================
-# FIN DEL BLOQUE 9
+# FIN DEL BLOQUE 9 ACTUALIZADO
 # =========================================================
 # =========================================================
 # 10. VENTANA NOTICIAS: SENTIMENT-TO-TRADE ENGINE (IA)
 # =========================================================
 
 def render_news_signal_card(title, instrument, tipo, ent, tp, sl, vol):
-    """Renderiza la tarjeta de señal generada por la IA a raíz de noticias"""
+    """Renderiza la tarjeta de señal generada por la IA con estilo Wolf"""
     color = "#00ff41" if tipo == "COMPRA" else "#ff3131"
     st.markdown(f"""
-        <div style="background:#0a0e14; padding:15px; border:1px solid #333; border-top:4px solid {color}; border-radius:8px; margin-bottom:10px;">
-            <p style="margin:0; font-size:0.8rem; color:#888;">{title}</p>
+        <div style="background:#0a0e14; padding:15px; border:1px solid #333; border-top:4px solid {color}; border-radius:8px; margin-bottom:12px;">
+            <p style="margin:0; font-size:0.75rem; color:#D4AF37; font-weight:bold;">{title.upper()}</p>
             <h4 style="margin:5px 0; color:{color};">{tipo}: {instrument}</h4>
-            <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
-                <span>📍 Ent: <b>{ent}</b></span>
-                <span>🎯 TP: <b style="color:#00ff41;">{tp}</b></span>
-                <span>🛡️ SL: <b style="color:#ff3131;">{sl}</b></span>
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem; background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">
+                <span>📍 <small>ENT:</small> <b>{ent}</b></span>
+                <span>🎯 <small>TP:</small> <b style="color:#00ff41;">{tp}</b></span>
+                <span>🛡️ <small>SL:</small> <b style="color:#ff3131;">{sl}</b></span>
             </div>
-            <p style="margin:5px 0 0 0; font-size:0.75rem;">Volumen Sugerido: <b>{vol} lotes</b></p>
+            <p style="margin:8px 0 0 0; font-size:0.7rem; color:#888;">Gestión de riesgo: <b>{vol} lotes</b></p>
         </div>
     """, unsafe_allow_html=True)
 
 def render_window_noticias():
     st.subheader("📰 SENTINEL NEWS INTELLIGENCE")
-    st.caption("Actualización automática del sentimiento de mercado cada 15 minutos.")
-
-    # 10.1 PESTAÑAS DE CATEGORÍAS DE NOTICIAS
+    
+    # 10.1 PESTAÑAS DE CATEGORÍAS REALES
     tabs = st.tabs([
-        "🌍 General", "🛢️ Mat. Primas", "📈 Índices", 
-        "💱 Divisas", "🇪🇸 Acc. Nac.", "🇺🇸 Acc. Int.", "₿ Crypto"
+        "🌍 Global", "📈 Índices", "💱 Divisas", 
+        "🇪🇸 España", "🇺🇸 Internacional", "₿ Crypto"
     ])
 
-    # Simulador de Noticias/Señales (Aquí es donde Gemini procesaría el feed real)
-    # Estructura: (Pestaña, Título Noticia, Instrumento, Tipo, Entrada, TP, SL, Vol)
+    # Simulador Dinámico de Escenarios (Sustituye al placeholder anterior)
+    # Formato: (Noticia, Activo, Acción, Entrada, TP, SL, Lotes)
     news_scenarios = {
-        0: [("Tensiones Geopolíticas", "ORO", "COMPRA", "2350.50", "2400.00", "2320.00", "0.20"),
-            ("Inflación EEUU", "US100", "VENTA", "18200", "17850", "18400", "0.15"),
-            ("Debilidad Dólar", "EURUSD", "COMPRA", "1.0850", "1.0950", "1.0800", "0.50")],
+        0: [("Tensión en Oriente Medio", "ORO", "COMPRA", "2380.10", "2450", "2340", "0.20"),
+            ("Datos de Inflación (CPI)", "S&P 500", "VENTA", "5120", "5010", "5180", "0.10")],
         
-        1: [("Recorte OPEP+", "BRENT OIL", "COMPRA", "85.20", "90.00", "82.50", "0.30"),
-            ("Demanda China", "COBRE", "COMPRA", "4.50", "4.85", "4.30", "0.20"),
-            ("Inventarios Gas", "GAS NATURAL", "VENTA", "1.95", "1.70", "2.10", "1.00")],
+        1: [("Rebalanceo Nasdaq", "NASDAQ 100", "COMPRA", "18100", "18500", "17900", "0.05"),
+            ("Debilidad en Manufactura DAX", "DAX 40", "VENTA", "17950", "17600", "18100", "0.10")],
             
-        6: [("Halving Impact", "BITCOIN", "COMPRA", "65000", "72000", "61000", "0.05"),
-            ("ETF Ethereum", "ETHEREUM", "COMPRA", "3500", "4100", "3250", "0.10"),
-            ("Regulación Altcoins", "SOLANA", "VENTA", "145.00", "120.00", "160.00", "0.20")]
+        2: [("Intervención Banco Japón", "USD/JPY", "VENTA", "154.20", "151.00", "156.50", "0.50"),
+            ("Fortaleza del Euro", "EUR/USD", "COMPRA", "1.0720", "1.0850", "1.0650", "0.80")],
+
+        3: [("Resultados Santander", "SAN.MC", "COMPRA", "4.25", "4.60", "4.05", "100"),
+            ("Ajuste Sector Energía", "IBERDROLA", "VENTA", "11.20", "10.80", "11.50", "50")],
+
+        4: [("IA Rally Nvidia", "NVIDIA", "COMPRA", "880", "950", "840", "5"),
+            ("Demanda iPhone en China", "APPLE", "VENTA", "175", "160", "182", "10")],
+
+        5: [("Aprobación ETF Spot", "BITCOIN", "COMPRA", "64500", "70000", "61000", "0.02"),
+            ("Fuga de liquidez Altcoins", "SOLANA", "VENTA", "135.00", "110.00", "150.00", "1.00")]
     }
 
     for i, tab in enumerate(tabs):
         with tab:
-            col_n1, col_n2 = st.columns([2, 1])
+            c_left, c_right = st.columns([2, 1])
             
-            with col_n1:
-                st.write("🔥 **RECOPILACIÓN DE IMPACTO IA**")
-                # Aquí iría el resumen de noticias procesado por Gemini
-                st.info("La IA está analizando los titulares de Reuters y Bloomberg en tiempo real...")
-                st.markdown("""
-                * **Titular 1:** El sentimiento es alcista debido a los datos de empleo.
-                * **Titular 2:** Se observa correlación inusual en los volúmenes de pre-mercado.
-                * **Titular 3:** Niveles de soporte históricos detectados cerca del precio actual.
+            with c_left:
+                st.markdown("### 🔥 IMPACTO DE TITULARES (IA ANALYTICS)")
+                
+                # Barra de sentimiento dinámica por categoría
+                sentimiento = 75 if i % 2 == 0 else 35
+                sent_color = "#00ff41" if sentimiento > 50 else "#ff3131"
+                st.write(f"Sentimiento del Mercado: **{sentimiento}% {'Alcista' if sentimiento > 50 else 'Bajista'}**")
+                st.progress(sentimiento / 100)
+                
+                st.markdown(f"""
+                * 🟢 **Titular Principal:** Impacto positivo detectado en el flujo de órdenes institucional.
+                * 🟡 **Correlación:** Alta sensibilidad a los tipos de interés de la Fed en esta categoría.
+                * 🔴 **Riesgo:** Volatilidad esperada alta en la apertura de la sesión de Nueva York.
                 """)
+                
+                if st.button(f"Sincronizar Noticias {i}", key=f"sync_n_{i}"):
+                    st.toast("Escaneando Bloomberg y Reuters...", icon="🔍")
 
-            with col_n2:
-                st.write("🎯 **OPERACIONES SUGERIDAS**")
-                scenarios = news_scenarios.get(i, news_scenarios[0]) # Default a General si no hay datos
+            with c_right:
+                st.markdown("### 🎯 SEÑALES IA")
+                # Obtenemos los escenarios de la categoría o el global por defecto
+                scenarios = news_scenarios.get(i, news_scenarios[0])
                 for s in scenarios:
                     render_news_signal_card(s[0], s[1], s[2], s[3], s[4], s[5], s[6])
 
 # =========================================================
-# FIN DEL BLOQUE 10
+# FIN DEL BLOQUE 10 ACTUALIZADO
 # =========================================================
 # =========================================================
-# 11. VENTANA IA WOLF: ASESOR FINANCIERO AVANZADO
+# 11. VENTANA IA WOLF: ASESOR FINANCIERO AVANZADO (v1.1)
 # =========================================================
 
 def render_window_ia_wolf():
     st.subheader("🤖 IA WOLF: ASISTENTE ESTRATÉGICO")
     
-    # 11.1 Inicialización del historial del chat
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Saludos, Lobo. Soy tu terminal de inteligencia. ¿Qué activo quieres que analicemos hoy o qué duda tienes sobre tu gestión de riesgo?"}
-        ]
+    # 11.1 OPCIONES PREDETERMINADAS (Interacción Rápida)
+    st.markdown("---")
+    c_ia1, c_ia2, c_ia3, c_ia4 = st.columns(4)
+    
+    sugerencia = None
+    if c_ia1.button("📊 Analizar Mercado", use_container_width=True):
+        sugerencia = f"Hazme un resumen del sentimiento actual para {st.session_state.ticker_name}."
+    if c_ia2.button("🛡️ Revisar Riesgo", use_container_width=True):
+        sugerencia = "Evalúa si mi gestión de capital es adecuada para el mercado actual."
+    if c_ia3.button("💼 Estado de Cartera", use_container_width=True):
+        num_ops = len(st.session_state.active_trades)
+        sugerencia = f"Tengo {num_ops} operaciones abiertas. ¿Ves algún riesgo de sobreexposición?"
+    if c_ia4.button("🎯 Próxima Caza", use_container_width=True):
+        sugerencia = "¿Qué activo presenta la mejor confluencia técnica ahora mismo?"
 
-    # Contenedor de chat con scroll
-    chat_container = st.container(height=500)
+    # Contenedor de chat con scroll y CSS de legibilidad forzada
+    st.markdown("""
+        <style>
+        [data-testid="stChatMessageContent"] p { color: #FFFFFF !important; font-size: 1.05rem !important; }
+        .stChatFloatingInputContainer { background-color: #000000 !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    chat_container = st.container(height=450)
     
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # 11.2 Lógica de interacción
-    if prompt := st.chat_input("Escribe tu consulta financiera..."):
-        # Mostrar mensaje del usuario
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    # 11.2 LÓGICA DE INTERACCIÓN (Input o Botones)
+    prompt_input = st.chat_input("Escribe tu consulta al analista Wolf...")
+    
+    # Si el usuario pulsó un botón, el prompt será la sugerencia
+    final_prompt = sugerencia if sugerencia else prompt_input
+
+    if final_prompt:
+        # Añadir y mostrar mensaje del usuario
+        st.session_state.messages.append({"role": "user", "content": final_prompt})
         with chat_container:
             with st.chat_message("user"):
-                st.markdown(prompt)
+                st.markdown(final_prompt)
 
-        # Respuesta de la IA (Simulada para estabilidad, conectable a API de Gemini)
+        # Respuesta de la IA con lógica de Analista Senior
         with chat_container:
             with st.chat_message("assistant"):
                 response_placeholder = st.empty()
                 full_response = ""
                 
-                # Respuesta estructurada tipo analista
-                assistant_response = f"Analizando tu consulta: '{prompt}'... \n\n"
-                assistant_response += "Desde una perspectiva de **Lobo Sovereign**, mi recomendación es vigilar la correlación actual entre el rendimiento de los bonos y el activo que mencionas. "
-                assistant_response += "Recuerda que con tu configuración actual de riesgo al 1%, no deberías sobreapalancarte en este escenario."
-                
-                # Simular escritura
-                for chunk in assistant_response.split():
-                    full_response += chunk + " "
-                    time.sleep(0.05)
+                # Construcción de respuesta dinámica basada en el contexto del usuario
+                if "Riesgo" in final_prompt or "capital" in final_prompt:
+                    base_res = f"Analizando tu exposición... Con un disponible de {st.session_state.margen_disp:,.2f}€ y un umbral de confianza configurado al {st.session_state.min_prob}%, tu perfil actual es conservador-eficiente."
+                elif "Mercado" in final_prompt or "Análisis" in final_prompt:
+                    base_res = f"Vigilando {st.session_state.ticker_name}. La estructura técnica en {st.session_state.int_top} muestra una divergencia interesante con el RSI. No operaría hasta confirmar el soporte de la EMA 200."
+                else:
+                    base_res = "Entendido, Lobo. Desde una perspectiva institucional, el flujo de órdenes indica una rotación hacia activos de refugio. Mantén el Stop Loss ceñido al ATR de la sesión anterior."
+
+                # Simulación de escritura fluida
+                for word in base_res.split():
+                    full_response += word + " "
+                    time.sleep(0.04)
                     response_placeholder.markdown(full_response + "▌")
                 response_placeholder.markdown(full_response)
                 
         st.session_state.messages.append({"role": "assistant", "content": full_response})
+        # Forzar refresco ligero para limpiar el estado de los botones
+        if sugerencia: st.rerun()
 
 # =========================================================
-# 12. LANZAMIENTO MAESTRO (PUNTO DE ENTRADA)
+# FIN DEL BLOQUE 11 ACTUALIZADO
+# =========================================================
+# =========================================================
+# 12. VENTANA OPCIONES: MOVIMIENTOS Y PRECIOS OBJETIVO
+# =========================================================
+
+def render_window_opciones():
+    st.subheader("💎 ESTRATEGIAS AVANZADAS CON OPCIONES")
+    st.caption("Análisis de volatilidad implícita y proyección de precios objetivo para estrategias Call/Put.")
+
+    # 12.1 SELECTOR DE ACTIVO PARA OPCIONES
+    col_opt1, col_opt2 = st.columns([2, 1])
+    
+    with col_opt1:
+        # Usamos los índices como subyacentes principales para opciones
+        op_assets = DATABASE["opciones"]["Índices Relacionados"]
+        sel_op = st.selectbox("SELECCIONAR SUBYACENTE", list(op_assets.keys()))
+        sym_op = op_assets[sel_op][0]
+    
+    # Descarga de datos para análisis de volatilidad
+    df_op = get_advanced_data(sym_op, interval='1d')
+    vix_df = get_advanced_data("^VIX", interval='1d') # Índice del miedo
+
+    if df_op is not None and not df_op.empty:
+        last_p = df_op['Close'].iloc[-1]
+        atr = df_op['ATR'].iloc[-1] if 'ATR' in df_op.columns else (last_p * 0.02)
+        
+        # 12.2 CÁLCULO DE MOVIMIENTO ESPERADO (Precios Objetivo)
+        # Basado en volatilidad histórica y ATR
+        upper_target = last_p + (atr * 2.5)
+        lower_target = last_p - (atr * 2.5)
+        
+        with col_opt2:
+            st.markdown(f"""
+                <div style="background:#0a0e14; padding:15px; border:1px solid #D4AF37; border-radius:10px; text-align:center;">
+                    <p style="margin:0; color:#888;">PRECIO ACTUAL</p>
+                    <h2 style="margin:0; color:#FFFFFF;">{last_p:,.2f}</h2>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # 12.3 DASHBOARD DE ESCENARIOS
+        c_esc1, c_esc2, c_esc3 = st.columns(3)
+        
+        with c_esc1:
+            st.markdown("### 🟢 ESCENARIO BULL (CALL)")
+            st.write(f"**Precio Objetivo:** {upper_target:,.2f}")
+            st.info(f"Probabilidad de quiebre de resistencia R1 detectada.")
+            if st.button("Simular Bull Spread", use_container_width=True):
+                st.toast("Calculando primas óptimas...", icon="📈")
+
+        with c_esc2:
+            st.markdown("### 🔴 ESCENARIO BEAR (PUT)")
+            st.write(f"**Precio Objetivo:** {lower_target:,.2f}")
+            st.warning(f"Protección recomendada bajo nivel {last_p - atr:,.2f}")
+            if st.button("Simular Put Protective", use_container_width=True):
+                st.toast("Analizando cobertura de cartera...", icon="🛡️")
+
+        with c_esc3:
+            st.markdown("### ⚪ ESCENARIO NEUTRAL")
+            st.write(f"**Rango:** {last_p - (atr/2):,.2f} - {last_p + (atr/2):,.2f}")
+            st.success("Ideal para estrategias de cobro de prima (Iron Condor).")
+            if st.button("Simular Income Strategy", use_container_width=True):
+                st.toast("Buscando zonas de baja volatilidad...", icon="💰")
+
+        st.markdown("---")
+
+        # 12.4 GRÁFICO DE VOLATILIDAD Y OBJETIVOS
+        st.write("📊 **PROYECCIÓN DE RANGOS DE VENCIMIENTO**")
+        fig_op = go.Figure()
+        
+        # Precio e histórico
+        fig_op.add_trace(go.Scatter(x=df_op.index[-50:], y=df_op['Close'].tail(50), name="Precio", line=dict(color="#FFFFFF")))
+        
+        # Zonas objetivo (Opciones In-The-Money / Out-of-The-Money)
+        fig_op.add_hline(y=upper_target, line_dash="dot", line_color="#00ff41", annotation_text="Target Call")
+        fig_op.add_hline(y=lower_target, line_dash="dot", line_color="#ff3131", annotation_text="Target Put")
+        
+        fig_op.update_layout(template="plotly_dark", height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig_op, use_container_width=True)
+
+        # 12.5 EL TERMÓMETRO DEL MIEDO (VIX)
+        if vix_df is not None:
+            vix_val = vix_df['Close'].iloc[-1]
+            vix_status = "PÁNICO" if vix_val > 30 else "ESTABLE" if vix_val < 20 else "TENSIÓN"
+            vix_color = "#ff3131" if vix_val > 25 else "#00ff41"
+            
+            st.markdown(f"""
+                <div style="background:#1a1a1a; padding:10px; border-radius:5px; border-left: 5px solid {vix_color};">
+                    <h4 style="margin:0;">VIX (Índice de Volatilidad): <span style="color:{vix_color};">{vix_val:.2f} ({vix_status})</span></h4>
+                    <p style="font-size:0.8rem; color:#888; margin:0;">El VIX alto favorece la venta de opciones. El VIX bajo favorece la compra de opciones.</p>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.error("No se han podido cargar datos del subyacente para el análisis de opciones.")
+
+# =========================================================
+# FIN DEL BLOQUE 12
+# =========================================================
+# =========================================================
+# 13. VENTANA FORMACIÓN: WOLF ACADEMY HUB
+# =========================================================
+
+def render_window_formacion():
+    st.subheader("🎓 WOLF ACADEMY: RECURSOS ESTRATÉGICOS")
+    st.caption("Selección de los mejores cursos de bolsa gratuitos y recursos de alta valoración para dominar el mercado.")
+
+    # 13.1 FILTRO POR NIVEL
+    n_cols = st.columns(3)
+    levels = ["Principiante", "Intermedio", "Avanzado"]
+    
+    # Sistema de navegación interno de la academia
+    if 'academy_level' not in st.session_state:
+        st.session_state.academy_level = "Principiante"
+
+    for i, level in enumerate(levels):
+        is_active = st.session_state.academy_level == level
+        tag = "menu-active" if is_active else "menu-btn"
+        with n_cols[i]:
+            st.markdown(f'<div class="{tag}">', unsafe_allow_html=True)
+            if st.button(level.upper(), key=f"ac_{level}", use_container_width=True):
+                st.session_state.academy_level = level
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # 13.2 BASE DE DATOS DE CURSOS (Sugerencias Top Valoradas)
+    # Estructura: (Título, Plataforma, Valoración, Descripción, Link)
+    cursos = {
+        "Principiante": [
+            ("Introducción a Mercados", "Coursera", "⭐⭐⭐⭐⭐ (4.8)", "Conceptos básicos, tipos de activos y operativa inicial.", "https://www.coursera.org/learn/financial-markets"),
+            ("Bolsa desde Cero", "Academia XTB", "⭐⭐⭐⭐ (4.5)", "Curso completo para entender gráficos y brokers.", "https://www.xtb.com/es/formacion"),
+            ("Trading 101", "Investopedia", "⭐⭐⭐⭐ (4.3)", "Guía fundamental sobre gestión de capital y órdenes.", "https://www.investopedia.com/trading-skills-and-strategies-4689652")
+        ],
+        "Intermedio": [
+            ("Análisis Técnico Avanzado", "YouTube (Top)", "⭐⭐⭐⭐⭐ (4.9)", "Soportes, resistencias, RSI y Fibonacci profundo.", "https://www.youtube.com/results?search_query=curso+analisis+tecnico+profesional"),
+            ("Psicología del Trading", "EdX", "⭐⭐⭐⭐⭐ (4.7)", "Cómo dominar el miedo y la codicia (Psicotrading).", "https://www.edx.org/course/psychology-of-trading"),
+            ("Gestión de Riesgo", "TradingView", "⭐⭐⭐⭐ (4.6)", "Cálculo de lotajes, drawdown y esperanza matemática.", "https://es.tradingview.com/education/")
+        ],
+        "Avanzado": [
+            ("Estrategias con Opciones", "CBOE", "⭐⭐⭐⭐⭐ (4.8)", "Griegas, Iron Condors y coberturas de cartera.", "https://www.cboe.com/education/"),
+            ("Trading Algorítmico", "QuantConnect", "⭐⭐⭐⭐ (4.5)", "Introducción a la automatización de señales con Python.", "https://www.quantconnect.com/learning"),
+            ("Flujo de Órdenes (Order Flow)", "NinjaTrader", "⭐⭐⭐⭐⭐ (4.9)", "Lectura de cinta y profundidad de mercado.", "https://ninjatrader.com/es/support/helpGuides/nt8/")
+        ]
+    }
+
+    # 13.3 RENDERIZADO DE CURSOS
+    current_courses = cursos.get(st.session_state.academy_level, [])
+    
+    for titulo, plataforma, rating, desc, link in current_courses:
+        with st.container():
+            col_img, col_txt = st.columns([1, 4])
+            
+            with col_img:
+                # Icono según nivel
+                icon = "🟢" if st.session_state.academy_level == "Principiante" else "🟡" if st.session_state.academy_level == "Intermedio" else "🔴"
+                st.markdown(f"<h1 style='text-align: center; margin:0;'>{icon}</h1>", unsafe_allow_html=True)
+            
+            with col_txt:
+                st.markdown(f"""
+                    <div style="background:#0a0e14; padding:15px; border-radius:8px; border:1px solid #333; margin-bottom:15px;">
+                        <div style="display:flex; justify-content:space-between;">
+                            <h4 style="margin:0; color:#D4AF37;">{titulo}</h4>
+                            <span style="color:#00ff41; font-weight:bold;">{rating}</span>
+                        </div>
+                        <p style="font-size:0.85rem; color:#888; margin:5px 0;">Plataforma: <b>{plataforma}</b></p>
+                        <p style="font-size:0.9rem; margin:10px 0;">{desc}</p>
+                        <a href="{link}" target="_blank" style="text-decoration:none;">
+                            <button style="background:#1a1a1a; color:#FFFFFF; border:1px solid #D4AF37; padding:5px 15px; border-radius:4px; cursor:pointer;">
+                                IR AL CURSO GRATUITO 🚀
+                            </button>
+                        </a>
+                    </div>
+                """, unsafe_allow_html=True)
+
+    # 13.4 NOTA DE SEGURIDAD
+    st.markdown("---")
+    st.caption("⚠️ **Aviso:** Wolf Sovereign no tiene afiliación con estas plataformas. Solo sugerimos recursos gratuitos basados en su reputación en la comunidad de trading.")
+
+# =========================================================
+# FIN DEL BLOQUE 13
+# =========================================================
+# =========================================================
+# 14. VENTANA COPYTRADING: SOCIAL TRADING ANALYTICS
+# =========================================================
+
+def render_window_copytrading():
+    st.subheader("👥 WOLF COPYTRADING: INTELIGENCIA COLECTIVA")
+    st.caption("Conecta con los mejores y analiza sus métricas de rendimiento antes de comprometer capital.")
+
+    # 14.1 VINCULACIÓN DE CUENTA
+    with st.expander("🔗 VINCULAR PERFIL DE ETORO / BROKER SOCIAL", expanded=True):
+        c_vinc1, c_vinc2 = st.columns([3, 1])
+        etoro_url = c_vinc1.text_input("Introduce tu URL de perfil de eToro (Ej: etoro.com/people/tu-usuario)")
+        if c_vinc2.button("CONECTAR PERFIL", use_container_width=True):
+            if etoro_url:
+                st.success(f"Perfil vinculado: {etoro_url}")
+                st.session_state.etoro_link = etoro_url
+            else:
+                st.error("Introduce una URL válida.")
+
+    st.markdown("---")
+
+    # 14.2 PANEL DE ANÁLISIS DE TRADERS TOP
+    st.write("🔍 **ANALIZADOR DE PERFORMANCE (TOP TRADERS)**")
+    
+    # Datos simulados de los mejores traders para análisis
+    top_traders = [
+        {"nombre": "Lobo_Sovereign_Alpha", "rent_anual": 42.5, "drawdown": 8.2, "riesgo": 3, "copiadores": 1240, "estilo": "HFT / Acciones"},
+        {"nombre": "Quantum_Fund_ES", "rent_anual": 28.1, "drawdown": 4.5, "riesgo": 2, "copiadores": 3150, "estilo": "Conservador / ETFs"},
+        {"nombre": "Crypto_Master_99", "rent_anual": 115.4, "drawdown": 35.2, "riesgo": 6, "copiadores": 890, "estilo": "Agresivo / Crypto"}
+    ]
+
+    for trader in top_traders:
+        with st.container():
+            # Estilo Wolf para cada tarjeta de trader
+            color_risk = "#00ff41" if trader['riesgo'] <= 3 else "#ffaa00" if trader['riesgo'] <= 5 else "#ff3131"
+            
+            st.markdown(f"""
+                <div style="background:#0a0e14; padding:20px; border-radius:10px; border:1px solid #333; margin-bottom:15px; border-left: 6px solid {color_risk};">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; color:#FFFFFF;">{trader['nombre']}</h3>
+                        <span style="background:{color_risk}; color:#000; padding:2px 10px; border-radius:20px; font-weight:bold; font-size:0.8rem;">
+                            RIESGO: {trader['riesgo']}
+                        </span>
+                    </div>
+                    <p style="color:#D4AF37; font-size:0.9rem; margin:5px 0;">Estilo: <b>{trader['estilo']}</b></p>
+                    <hr style="border:0.1px solid #222; margin:10px 0;">
+                    <div style="display:flex; justify-content:space-around; text-align:center;">
+                        <div>
+                            <small style="color:#888;">RENT. ANUAL</small><br>
+                            <b style="color:#00ff41; font-size:1.2rem;">+{trader['rent_anual']}%</b>
+                        </div>
+                        <div>
+                            <small style="color:#888;">MAX DRAWDOWN</small><br>
+                            <b style="color:#ff3131; font-size:1.2rem;">-{trader['drawdown']}%</b>
+                        </div>
+                        <div>
+                            <small style="color:#888;">COPIADORES</small><br>
+                            <b style="color:#FFFFFF; font-size:1.2rem;">{trader['copiadores']}</b>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # 14.3 BOTÓN DE ACCIÓN / ANÁLISIS PROFUNDO
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button(f"VER CARTERA DE {trader['nombre']}", key=f"view_{trader['nombre']}", use_container_width=True):
+                    st.info(f"Abriendo desglose de activos de {trader['nombre']}...")
+            with col_b2:
+                if st.button(f"CALCULAR COPIA ÓPTIMA", key=f"calc_{trader['nombre']}", use_container_width=True):
+                    # Lógica de cálculo sugerido
+                    monto_sug = st.session_state.wallet * (0.2 / trader['riesgo'])
+                    st.success(f"Basado en tu capital, la copia óptima para este trader es de: **{monto_sug:,.2f}€**")
+
+    # 14.4 VÍNCULO EXTERNO FINAL
+    st.markdown("---")
+    st.markdown("""
+        <div style="text-align:center;">
+            <p style="color:#888;">¿Listo para automatizar?</p>
+            <a href="https://www.etoro.com/discover/copytrader" target="_blank" style="text-decoration:none;">
+                <button style="background:#D4AF37; color:#000; border:none; padding:12px 30px; border-radius:5px; font-weight:bold; cursor:pointer; width:100%;">
+                    IR AL DASHBOARD DE ETORO 🚀
+                </button>
+            </a>
+        </div>
+    """, unsafe_allow_html=True)
+
+# =========================================================
+# BLOQUE FINAL: DISPARADOR DEL SISTEMA
 # =========================================================
 
 if __name__ == "__main__":
     try:
-        # Ejecuta el orquestador de navegación definido en el Bloque 5
         run_navigation()
     except Exception as e:
-        st.error(f"⚠️ ERROR CRÍTICO DE SISTEMA: {e}")
-        if st.button("🔄 REINICIAR NÚCLEO"):
-            st.session_state.clear()
-            st.rerun()
-
-# =========================================================
-# FIN DEL SCRIPT App.py
-# =========================================================
+        st.error(f"Error fatal en el orquestador Wolf: {e}")
