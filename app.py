@@ -109,19 +109,6 @@ def send_wolf_alert(message):
 # =========================================================
 # FIN DEL BLOQUE 1
 # =========================================================
-Recibido. He tomado tu Bloque 2 y le he inyectado la ingeniería visual de Apple y el dinamismo de Bloomberg.
-
-Mejoras Críticas Aplicadas:
-
-Refuerzo de Visibilidad (UI): He aplicado !important a las reglas de color de texto para asegurar que los botones activos muestren el negro absoluto sobre el blanco/dorado, eliminando cualquier "efecto fantasma".
-
-Dinamismo del Ticker: He optimizado la función render_top_ticker con un multiplicador de contenido para asegurar que el movimiento sea fluido y sin saltos (loop infinito perfecto).
-
-Chat Visibility: He blindado el estilo del chat de la IA para que el texto blanco destaque sobre el fondo negro, manteniendo la estética de alta gama.
-
-Aquí tienes el Bloque 2 completo para sustituir:
-
-Python
 # =========================================================
 # 2. MOTOR DE ESTILOS "WOLF SOVEREIGN" (ELITE UI)
 # =========================================================
