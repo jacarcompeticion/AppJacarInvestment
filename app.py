@@ -1437,19 +1437,6 @@ def render_window_formacion():
 # =========================================================
 # FIN DEL BLOQUE 13 (Wolf Academy Hub)
 # =========================================================
-Este es el Bloque 14 reconstruido. He aplicado una reingeniería de nivel Social Trading Pro para cumplir con tus requisitos: filtrado de riesgo inteligente que muestra solo a los 4 mejores traders y enlaces funcionales externos.
-
-Mejoras de Nivel "Elite Broker" aplicadas:
-
-Filtro de Riesgo Dinámico: He implementado un st.slider de riesgo máximo. El motor ahora filtra la base de datos en tiempo real y muestra únicamente el Top 4 de traders que cumplen con tu perfil de riesgo, ordenados por rentabilidad.
-
-Enlaces Directos: Se han corregido los botones de "Ver Cartera". Ahora actúan como accesos reales que redirigen al perfil específico de eToro.
-
-Calculadora de Copia Óptima: He refinado la fórmula de capital sugerido. Ahora utiliza una matriz de riesgo-recompensa para decirte exactamente cuánto de tu capital actual deberías asignar a cada trader para no sobreexponerte.
-
-UI de Alta Visibilidad: Tarjetas con bordes codificados por color (verde/naranja/rojo) según el riesgo, manteniendo la estética de terminal institucional.
-
-Python
 # =========================================================
 # 14. VENTANA COPYTRADING: SOCIAL TRADING ANALYTICS (v1.2)
 # =========================================================
